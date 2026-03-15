@@ -1,0 +1,4 @@
+/* App-level overrides — mostly handled by index.css */
+.spin {
+  animation: spin 1s linear infinite;
+}
