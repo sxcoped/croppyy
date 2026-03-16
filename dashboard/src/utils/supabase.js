@@ -15,5 +15,20 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
     persistSession:     true,
     detectSessionInUrl: true,
     storage:            window.localStorage,
+    flowType:           'implicit',
   },
+});
+
+// Module-level token cache — updated on every auth state change.
+// api.js reads this directly instead of calling getSession() which can
+// return null during the brief window between tab load and session restore.
+export let cachedAccessToken = null;
+
+supabase.auth.onAuthStateChange((event, session) => {
+  cachedAccessToken = session?.access_token ?? null;
+});
+
+// Seed from storage immediately so the very first API call is covered
+supabase.auth.getSession().then(({ data: { session } }) => {
+  if (session?.access_token) cachedAccessToken = session.access_token;
 });

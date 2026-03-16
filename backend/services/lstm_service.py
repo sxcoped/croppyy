@@ -1,21 +1,20 @@
 """
 LSTM stress forecast inference service.
-Loads trained model + scaler and runs inference on a 12-step input sequence.
+Loads trained PyTorch model + scaler and runs inference on a 12-step input sequence.
 Returns 7-day stress probability and severity score.
 """
 import json
 import pickle
 import numpy as np
 from pathlib import Path
-from typing import Optional
 
-_model = None
-_scaler = None
+_model    = None
+_scaler   = None
 _metadata = None
 
-MODEL_PATH   = Path("./ml_models/stress_lstm.h5")
-SCALER_PATH  = Path("./ml_models/lstm_scaler.pkl")
-META_PATH    = Path("./ml_models/lstm_metadata.json")
+MODEL_PATH  = Path("./ml_models/stress_lstm.pt")
+SCALER_PATH = Path("./ml_models/lstm_scaler.pkl")
+META_PATH   = Path("./ml_models/lstm_metadata.json")
 
 
 def _load():
@@ -29,8 +28,33 @@ def _load():
             "Run: python ml_training/stress_lstm/train.py"
         )
 
-    import tensorflow as tf
-    _model = tf.keras.models.load_model(str(MODEL_PATH))
+    import torch
+    import torch.nn as nn
+
+    class StressLSTM(nn.Module):
+        def __init__(self, input_size=6, hidden1=64, hidden2=32, fc_size=16, dropout=0.2):
+            super().__init__()
+            self.lstm1   = nn.LSTM(input_size, hidden1, batch_first=True, dropout=dropout)
+            self.lstm2   = nn.LSTM(hidden1, hidden2, batch_first=True, dropout=dropout)
+            self.dropout = nn.Dropout(0.3)
+            self.fc1     = nn.Linear(hidden2, fc_size)
+            self.relu    = nn.ReLU()
+            self.fc2     = nn.Linear(fc_size, 1)
+            self.sigmoid = nn.Sigmoid()
+
+        def forward(self, x):
+            out, _ = self.lstm1(x)
+            out, _ = self.lstm2(out)
+            out = out[:, -1, :]
+            out = self.dropout(out)
+            out = self.relu(self.fc1(out))
+            out = self.sigmoid(self.fc2(out))
+            return out.squeeze(1)
+
+    checkpoint = torch.load(str(MODEL_PATH), map_location="cpu", weights_only=True)
+    _model = StressLSTM()
+    _model.load_state_dict(checkpoint["model_state"])
+    _model.eval()
 
     if SCALER_PATH.exists():
         with open(SCALER_PATH, "rb") as f:
@@ -48,20 +72,21 @@ def predict_stress(sequence: list[list[float]]) -> dict:
     """
     _load()
 
+    import torch
+
     arr = np.array(sequence, dtype=np.float32)   # (12, 6)
     if arr.shape != (12, 6):
         raise ValueError(f"Expected shape (12, 6), got {arr.shape}")
 
-    # Normalise using fitted scaler
     if _scaler is not None:
-        arr_flat = arr.reshape(12 * 6).reshape(-1, 6)  # (12, 6)
-        arr = _scaler.transform(arr_flat).reshape(1, 12, 6)
+        arr = _scaler.transform(arr).reshape(1, 12, 6)
     else:
         arr = arr.reshape(1, 12, 6)
 
-    prob = float(_model.predict(arr, verbose=0)[0][0])
+    tensor = torch.tensor(arr, dtype=torch.float32)
+    with torch.no_grad():
+        prob = float(_model(tensor).item())
 
-    # Severity score: amplify to 0–1 range
     severity = round(min(prob * 1.2, 1.0), 3)
 
     if prob >= 0.7:

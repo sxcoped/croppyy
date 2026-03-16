@@ -3,39 +3,53 @@
  * Axios instance that auto-injects the Supabase JWT on every request.
  */
 import axios from 'axios';
-import { supabase } from './supabase';
+import { supabase, cachedAccessToken } from './supabase';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const api = axios.create({ baseURL: API_URL });
 
 // ── Request interceptor — inject Bearer token ───────────────────────
+// Uses the module-level cachedAccessToken which is kept in sync by
+// supabase.auth.onAuthStateChange — avoids the getSession() async
+// race that was causing the token to be missing on first load.
 api.interceptors.request.use(async (config) => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session?.access_token) {
-    config.headers['Authorization'] = `Bearer ${session.access_token}`;
+  // Use cached token first (synchronous, always up-to-date)
+  let token = cachedAccessToken;
+
+  // Fallback: try getSession in case the cache hasn't been seeded yet
+  if (!token) {
+    const { data: { session } } = await supabase.auth.getSession();
+    token = session?.access_token ?? null;
+  }
+
+  if (token) {
+    config.headers['Authorization'] = `Bearer ${token}`;
   }
   return config;
 });
 
-// ── Response interceptor — token expiry handling ────────────────────
+// ── Response interceptor — token expiry / missing auth handling ─────
 api.interceptors.response.use(
   (res) => res,
   async (error) => {
-    if (error.response?.status === 401) {
-      // Try to refresh the session
-      const { error: refreshError } = await supabase.auth.refreshSession();
-      if (!refreshError) {
-        // Retry the original request
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          error.config.headers['Authorization'] = `Bearer ${session.access_token}`;
-          return api.request(error.config);
-        }
-      }
-      // If refresh failed, redirect to login
-      window.location.href = '/login';
+    const status = error.response?.status;
+    const isAuthError = status === 401 || status === 403;
+
+    if (!isAuthError) return Promise.reject(error);
+    if (sessionStorage.getItem('croppy_demo') === '1') return Promise.reject(error);
+    // Prevent infinite retry loop
+    if (error.config._authRetried) return Promise.reject(error);
+
+    // Try to refresh the session once
+    const { data: refreshed } = await supabase.auth.refreshSession();
+    if (refreshed?.session?.access_token) {
+      error.config._authRetried = true;
+      error.config.headers['Authorization'] = `Bearer ${refreshed.session.access_token}`;
+      return api.request(error.config);
     }
+
+    // Let Supabase's onAuthStateChange handle real sign-outs naturally
     return Promise.reject(error);
   }
 );
@@ -53,6 +67,15 @@ export const getTimeseries = (lat, lon, start, end) =>
 
 export const getSoilMoisture = (lat, lon, start, end) =>
   api.post('/api/rs/soil-moisture', { lat, lon, start, end });
+
+export const getRainfall = (lat, lon, start, end, polygon = null) =>
+  api.post('/api/rs/rainfall', { lat, lon, start, end, polygon });
+
+export const getLandSurfaceTemp = (lat, lon, start, end, polygon = null) =>
+  api.post('/api/rs/land-surface-temp', { lat, lon, start, end, polygon });
+
+export const getTopography = (lat, lon, polygon = null) =>
+  api.post('/api/rs/topography', { lat, lon, polygon });
 
 export const getFieldHistory = (fieldId, limit = 30) =>
   api.get(`/api/rs/history/${fieldId}?limit=${limit}`);
@@ -104,6 +127,33 @@ export const getMarketPrices = (crop, state='') =>
 
 // ── Reports ──────────────────────────────────────────────────────────
 export const generateReport  = (data) => api.post('/api/reports/generate', data, { responseType: 'blob' });
+
+// ── Insurance ─────────────────────────────────────────────────────────
+export const checkFasalEligibility = (data) => api.post('/api/insurance/fasal-check', data);
+export const generateFarmRecord    = (data) => api.post('/api/insurance/farm-record', data, { responseType: 'blob' });
+export const getFieldRecord        = (fieldId) => api.get(`/api/insurance/field-record/${fieldId}`);
+
+// ── Zone Map & Thumbnail ──────────────────────────────────────────────
+export const getZoneMap = (lat, lon, start, end, polygon = null) =>
+  api.post('/api/rs/zone-map', { lat, lon, start, end, polygon });
+
+export const getThumbnail = (lat, lon, start, end, polygon = null) =>
+  api.post('/api/rs/thumbnail', { lat, lon, start, end, polygon });
+
+export const getIndexThumbnail = (lat, lon, start, end, index, polygon = null) =>
+  api.post('/api/rs/index-thumbnail', { lat, lon, start, end, index, polygon });
+
+// ── Advisory Engine ───────────────────────────────────────────────────
+export const getAdvisory = (data) => api.post('/api/advisory', data);
+export const getAdvisoryCrops = () => api.get('/api/advisory/crops');
+export const getGrowthStage = (crop_type, sowing_date) =>
+  api.get(`/api/advisory/stage/${crop_type}?sowing_date=${sowing_date}`);
+export const getFertilizerRecs = (crop_type, soil_ph = null) =>
+  api.get(`/api/advisory/fertilizer/${crop_type}${soil_ph ? `?soil_ph=${soil_ph}` : ''}`);
+
+// ── Onboarding ────────────────────────────────────────────────────────
+export const analyzeOnboarding = (lat, lon, crop_type, polygon = null, buffer_m = 500) =>
+  api.post('/api/onboarding/analyze', { lat, lon, crop_type, polygon, buffer_m });
 
 // ── Auth (via FastAPI — profile management) ───────────────────────────
 export const getMe           = ()     => api.get('/api/auth/me');

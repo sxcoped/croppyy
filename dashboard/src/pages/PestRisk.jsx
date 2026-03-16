@@ -140,7 +140,7 @@ export default function PestRisk() {
                   </ul>
 
                   <div className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>Recommendation</div>
-                  <p className="text-sm mt-8" style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  <p className="text-sm mt-8" style={{ color: '#2e7d32', lineHeight: 1.6 }}>
                     {alert.recommendation}
                   </p>
                 </div>

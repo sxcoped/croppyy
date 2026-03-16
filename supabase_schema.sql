@@ -54,6 +54,8 @@ create table if not exists public.fields (
   district        text,
   irrigation_type text default 'rainfed',
   geom            geometry(Point, 4326),
+  polygon         jsonb,          -- GeoJSON array of [lat, lon] vertices drawn by farmer
+  area_ha         double precision, -- calculated area in hectares
   created_at      timestamptz default now()
 );
 
@@ -193,47 +195,61 @@ alter table public.stress_forecasts enable row level security;
 alter table public.yield_estimates  enable row level security;
 alter table public.reports          enable row level security;
 
+-- ── Migration: add polygon + area + agro columns (safe to run on existing DB) ──
+alter table public.fields add column if not exists polygon jsonb;
+alter table public.fields add column if not exists area_ha double precision;
+
 -- Profiles
+drop policy if exists "Users manage own profile" on public.profiles;
 create policy "Users manage own profile"
   on public.profiles for all using (auth.uid() = id);
 
 -- Fields
+drop policy if exists "Users manage own fields" on public.fields;
 create policy "Users manage own fields"
   on public.fields for all using (auth.uid() = user_id);
 
 -- Index readings (via field ownership)
+drop policy if exists "Users see own field readings" on public.index_readings;
 create policy "Users see own field readings"
   on public.index_readings for all
   using (field_id in (select id from public.fields where user_id = auth.uid()));
 
 -- Sensor readings
+drop policy if exists "Users see own sensor readings" on public.sensor_readings;
 create policy "Users see own sensor readings"
   on public.sensor_readings for all
   using (field_id in (select id from public.fields where user_id = auth.uid()));
 
 -- Disease detections
+drop policy if exists "Users manage own detections" on public.disease_detections;
 create policy "Users manage own detections"
   on public.disease_detections for all using (auth.uid() = user_id);
 
 -- Pest alerts
+drop policy if exists "Users manage own alerts" on public.pest_alerts;
 create policy "Users manage own alerts"
   on public.pest_alerts for all using (auth.uid() = user_id);
 
 -- Stress forecasts
+drop policy if exists "Users manage own forecasts" on public.stress_forecasts;
 create policy "Users manage own forecasts"
   on public.stress_forecasts for all
   using (field_id in (select id from public.fields where user_id = auth.uid()));
 
 -- Yield estimates
+drop policy if exists "Users manage own yield estimates" on public.yield_estimates;
 create policy "Users manage own yield estimates"
   on public.yield_estimates for all
   using (field_id in (select id from public.fields where user_id = auth.uid()));
 
 -- Reports
+drop policy if exists "Users manage own reports" on public.reports;
 create policy "Users manage own reports"
   on public.reports for all using (auth.uid() = user_id);
 
--- Agronomists can read all data in their district (example policy)
+-- Agronomists can read all data in their district
+drop policy if exists "Agronomists read all fields" on public.fields;
 create policy "Agronomists read all fields"
   on public.fields for select
   using (

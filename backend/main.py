@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.services.gee_service import initialize_ee
-from backend.routes import rs, ml, fields, sensors, weather, auth, alerts, market, reports
+from backend.routes import rs, ml, fields, sensors, weather, auth, alerts, market, reports, onboarding, advisory, insurance
 
 # ─── GEE init ────────────────────────────────────────────────────────────────
 initialize_ee()
@@ -20,7 +20,7 @@ app = FastAPI(
         "LSTM temporal forecasting, and rule-based pest risk engine. "
         "SIH Problem ID: 25099 | MathWorks India."
     ),
-    version="0.2.0",
+    version="0.3.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -42,13 +42,16 @@ app.include_router(weather.router)
 app.include_router(alerts.router)
 app.include_router(market.router)
 app.include_router(reports.router)
+app.include_router(onboarding.router)
+app.include_router(advisory.router)
+app.include_router(insurance.router)
 
 
 @app.get("/", tags=["Health"])
 def root():
     return {
         "service":  "Croppy API",
-        "version":  "0.2.0",
+        "version":  "0.3.0",
         "docs":     "/docs",
         "status":   "ok",
         "modules": [

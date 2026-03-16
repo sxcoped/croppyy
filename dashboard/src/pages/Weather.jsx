@@ -67,7 +67,7 @@ export default function Weather() {
             <div className="text-xs text-muted">Humidity</div>
           </div>
           <div className="card animate-in animate-in-delay-2" style={{ textAlign: 'center' }}>
-            <Wind size={28} color="var(--text-secondary)" />
+            <Wind size={28} color="#2e7d32" />
             <div style={{ fontSize: '2.2rem', fontWeight: 800, marginTop: 8 }}>{current.wind_kph}</div>
             <div className="text-xs text-muted">Wind (km/h)</div>
           </div>
@@ -98,7 +98,7 @@ export default function Weather() {
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip
                     contentStyle={{
-                      background: '#161f1b', border: '1px solid rgba(76,175,80,0.2)',
+                      background: '#ffffff', border: '1px solid rgba(67,160,71,0.2)',
                       borderRadius: 8, fontSize: 12,
                     }}
                   />
@@ -120,7 +120,7 @@ export default function Weather() {
                   <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
                   <Tooltip
                     contentStyle={{
-                      background: '#161f1b', border: '1px solid rgba(76,175,80,0.2)',
+                      background: '#ffffff', border: '1px solid rgba(67,160,71,0.2)',
                       borderRadius: 8, fontSize: 12,
                     }}
                   />

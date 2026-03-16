@@ -1,0 +1,16 @@
+{
+  "features": [
+    "NDVI",
+    "EVI",
+    "NDWI",
+    "soil_moisture",
+    "temp_c",
+    "humidity_pct"
+  ],
+  "sequence_length": 12,
+  "n_features": 6,
+  "test_accuracy": 1.0,
+  "test_auc": 1.0,
+  "n_training_samples": 8000,
+  "framework": "pytorch"
+}

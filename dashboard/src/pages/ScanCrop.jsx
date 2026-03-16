@@ -3,8 +3,11 @@ import { Camera, Upload, Leaf, AlertTriangle, CheckCircle, Loader } from 'lucide
 import { detectDisease } from '../utils/api';
 
 const SEVERITY_COLORS = {
-  None: 'var(--green-400)', Medium: 'var(--accent-amber)',
-  High: 'var(--accent-orange)', Critical: 'var(--accent-red)',
+  None: 'var(--green-400)',
+  Moderate: 'var(--accent-amber)',
+  Medium: 'var(--accent-amber)',
+  High: 'var(--accent-orange)', 
+  Critical: 'var(--accent-red)',
 };
 
 export default function ScanCrop() {
@@ -139,7 +142,8 @@ export default function ScanCrop() {
               {/* Disease name + confidence */}
               <div style={{
                 textAlign: 'center', padding: 24,
-                background: `linear-gradient(135deg, ${result.is_healthy ? 'rgba(76,175,80,0.08)' : 'rgba(239,83,80,0.08)'}, transparent)`,
+                background: '#ffffff',
+                border: '1px solid rgba(67, 160, 71, 0.25)',
                 borderRadius: 'var(--radius-lg)', marginBottom: 20,
               }}>
                 {result.is_healthy ? (
@@ -169,11 +173,11 @@ export default function ScanCrop() {
               </div>
 
               {/* Treatment */}
-              <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ padding: 16, background: '#ffffff', borderRadius: 'var(--radius-md)', border: '1px solid rgba(67, 160, 71, 0.25)' }}>
                 <div className="text-xs text-muted mb-16" style={{ textTransform: 'uppercase', letterSpacing: 1 }}>
                   Recommended Treatment
                 </div>
-                <p style={{ lineHeight: 1.6, color: 'var(--text-secondary)' }}>
+                <p style={{ lineHeight: 1.6, color: '#2e7d32' }}>
                   {result.treatment}
                 </p>
               </div>

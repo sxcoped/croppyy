@@ -4,29 +4,92 @@ import toast from 'react-hot-toast';
 
 const AuthContext = createContext(null);
 
+const DEMO_USER = {
+  id: 'demo-user-id',
+  email: 'demo@croppy.in',
+};
+const DEMO_PROFILE = {
+  id: 'demo-user-id',
+  name: 'Demo Farmer',
+  role: 'farmer',
+  language: 'en',
+  state: 'Punjab',
+  district: 'Ludhiana',
+};
+
 export function AuthProvider({ children }) {
   const [user,    setUser]    = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isDemo,  setIsDemo]  = useState(false);
 
   // Load current session on mount
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) fetchProfile(session.user.id);
-      else setLoading(false);
-    });
+    // Restore demo mode from sessionStorage
+    if (sessionStorage.getItem('croppy_demo') === '1') {
+      setUser(DEMO_USER);
+      setProfile(DEMO_PROFILE);
+      setIsDemo(true);
+      setLoading(false);
+      return;
+    }
 
-    // Listen for auth state changes
+    // Check for OAuth errors in query string or hash (e.g. user denied access)
+    const urlParams  = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    const oauthError = urlParams.get('error_description') || urlParams.get('error')
+                    || hashParams.get('error_description') || hashParams.get('error');
+    if (oauthError) {
+      toast.error('Google sign-in failed: ' + oauthError);
+      window.history.replaceState({}, '', window.location.pathname);
+      setLoading(false);
+      return;
+    }
+
+    // Implicit flow: tokens arrive in the URL hash (#access_token=…).
+    // PKCE fallback: code arrives in query string (?code=…).
+    // Either way, keep loading=true until onAuthStateChange settles so the
+    // app never flashes unauthenticated state during the callback.
+    const pendingOAuth = hashParams.has('access_token') || urlParams.has('code');
+    let oauthSettled = false;
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
+        if (sessionStorage.getItem('croppy_demo') === '1') return;
+
+        // Suppress the pre-exchange INITIAL_SESSION null that fires before
+        // Supabase has finished processing the OAuth callback tokens.
+        if (pendingOAuth && !oauthSettled && event === 'INITIAL_SESSION' && !session) {
+          return;
+        }
+        oauthSettled = true;
+
         setUser(session?.user ?? null);
-        if (session?.user) fetchProfile(session.user.id);
-        else { setProfile(null); setLoading(false); }
+        if (session?.user) {
+          // Clean OAuth params out of the URL once we have a session
+          if (pendingOAuth) window.history.replaceState({}, '', '/');
+          fetchProfile(session.user.id);
+        } else {
+          setProfile(null);
+          setLoading(false);
+        }
       }
     );
 
-    return () => subscription.unsubscribe();
+    // Safety net: if the OAuth token detection hangs for > 10 s, give up.
+    const timeout = pendingOAuth
+      ? setTimeout(() => {
+          if (!oauthSettled) {
+            toast.error('Sign-in timed out — please try again.');
+            setLoading(false);
+          }
+        }, 10_000)
+      : null;
+
+    return () => {
+      subscription.unsubscribe();
+      if (timeout) clearTimeout(timeout);
+    };
   }, []);
 
   async function fetchProfile(userId) {
@@ -65,8 +128,18 @@ export function AuthProvider({ children }) {
     return data;
   }
 
+  function enterDemo() {
+    sessionStorage.setItem('croppy_demo', '1');
+    setUser(DEMO_USER);
+    setProfile(DEMO_PROFILE);
+    setIsDemo(true);
+    toast.success('Demo mode — explore freely!');
+  }
+
   async function signOut() {
-    await supabase.auth.signOut();
+    sessionStorage.removeItem('croppy_demo');
+    setIsDemo(false);
+    if (!isDemo) await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
     toast.success('Logged out successfully');
@@ -87,6 +160,7 @@ export function AuthProvider({ children }) {
 
   // Convenience: get access token for backend API calls
   async function getToken() {
+    if (isDemo) return null;
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token ?? null;
   }
@@ -95,10 +169,12 @@ export function AuthProvider({ children }) {
     user,
     profile,
     loading,
+    isDemo,
     isAuthenticated: !!user,
     signUp,
     signIn,
     signOut,
+    enterDemo,
     updateProfile,
     getToken,
     displayName: profile?.name || user?.email?.split('@')[0] || 'User',

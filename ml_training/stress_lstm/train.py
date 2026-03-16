@@ -13,9 +13,9 @@ Usage:
   python ml_training/stress_lstm/train.py --output_dir ./ml_models
 
 Exports:
-  ml_models/stress_lstm.h5       — Keras model
-  ml_models/stress_lstm.tflite   — Quantized TFLite
+  ml_models/stress_lstm.pt       — PyTorch model state dict
   ml_models/lstm_scaler.pkl      — MinMaxScaler for input normalisation
+  ml_models/lstm_metadata.json   — model metadata
 """
 import argparse
 import json
@@ -30,28 +30,26 @@ from sklearn.model_selection import train_test_split
 
 warnings.filterwarnings("ignore")
 
-SEQUENCE_LENGTH = 12    # 12 x ~5-day Sentinel-2 revisit = ~60-day lookback
-N_FEATURES      = 6     # NDVI, EVI, NDWI, soil_moisture, temp_c, humidity
+SEQUENCE_LENGTH = 12
+N_FEATURES      = 6
 SEED            = 42
 
 np.random.seed(SEED)
 
 
-# ─── Synthetic Data Generator ──────────────────────────────────────────────────
+# ─── Synthetic Data Generator ─────────────────────────────────────────────────
 
 def generate_healthy_sequence() -> np.ndarray:
-    """Simulate healthy crop conditions."""
-    ndvi         = np.random.uniform(0.45, 0.80, SEQUENCE_LENGTH) + np.random.normal(0, 0.03, SEQUENCE_LENGTH)
-    evi          = ndvi * np.random.uniform(0.65, 0.80, SEQUENCE_LENGTH)
-    ndwi         = np.random.uniform(0.10, 0.40, SEQUENCE_LENGTH)
-    soil_m       = np.random.uniform(28, 55, SEQUENCE_LENGTH)
-    temp_c       = np.random.uniform(20, 30, SEQUENCE_LENGTH) + np.random.normal(0, 1.5, SEQUENCE_LENGTH)
-    humidity     = np.random.uniform(55, 78, SEQUENCE_LENGTH)
+    ndvi     = np.random.uniform(0.45, 0.80, SEQUENCE_LENGTH) + np.random.normal(0, 0.03, SEQUENCE_LENGTH)
+    evi      = ndvi * np.random.uniform(0.65, 0.80, SEQUENCE_LENGTH)
+    ndwi     = np.random.uniform(0.10, 0.40, SEQUENCE_LENGTH)
+    soil_m   = np.random.uniform(28, 55, SEQUENCE_LENGTH)
+    temp_c   = np.random.uniform(20, 30, SEQUENCE_LENGTH) + np.random.normal(0, 1.5, SEQUENCE_LENGTH)
+    humidity = np.random.uniform(55, 78, SEQUENCE_LENGTH)
     return np.column_stack([ndvi, evi, ndwi, soil_m, temp_c, humidity])
 
 
 def generate_stress_sequence(stress_type: str = "drought") -> np.ndarray:
-    """Simulate stressed crop conditions."""
     if stress_type == "drought":
         ndvi     = np.linspace(0.50, 0.22, SEQUENCE_LENGTH) + np.random.normal(0, 0.025, SEQUENCE_LENGTH)
         evi      = ndvi * np.random.uniform(0.55, 0.70, SEQUENCE_LENGTH)
@@ -73,22 +71,19 @@ def generate_stress_sequence(stress_type: str = "drought") -> np.ndarray:
         soil_m   = np.random.uniform(65, 95, SEQUENCE_LENGTH)
         temp_c   = np.random.uniform(24, 30, SEQUENCE_LENGTH)
         humidity = np.random.uniform(75, 92, SEQUENCE_LENGTH)
-    else:  # mixed / random stress
+    else:
         ndvi     = np.random.uniform(0.15, 0.38, SEQUENCE_LENGTH) + np.random.normal(0, 0.03, SEQUENCE_LENGTH)
         evi      = ndvi * np.random.uniform(0.55, 0.70, SEQUENCE_LENGTH)
         ndwi     = np.random.uniform(-0.30, 0.10, SEQUENCE_LENGTH)
         soil_m   = np.random.uniform(10, 28, SEQUENCE_LENGTH)
         temp_c   = np.random.uniform(28, 40, SEQUENCE_LENGTH)
         humidity = np.random.uniform(30, 55, SEQUENCE_LENGTH)
-
     return np.column_stack([ndvi, evi, ndwi, soil_m, temp_c, humidity])
 
 
 def generate_dataset(n_samples: int = 8000):
-    """Generate balanced synthetic dataset."""
     X, y = [], []
-
-    n_healthy = n_samples // 2
+    n_healthy  = n_samples // 2
     n_stressed = n_samples - n_healthy
     stress_types = ["drought", "disease", "waterlogging", "mixed"]
 
@@ -102,133 +97,156 @@ def generate_dataset(n_samples: int = 8000):
             X.append(generate_stress_sequence(stress_type))
             y.append(1)
 
-    # Fill remainder with drought
     remainder = n_stressed - per_type * len(stress_types)
     for _ in range(remainder):
         X.append(generate_stress_sequence("drought"))
         y.append(1)
 
-    X = np.array(X)   # (N, 12, 6)
-    y = np.array(y)   # (N,)
-
-    # Shuffle
+    X = np.array(X)
+    y = np.array(y)
     idx = np.random.permutation(len(X))
     return X[idx], y[idx]
 
 
-# ─── Model Building ────────────────────────────────────────────────────────────
+# ─── Model ────────────────────────────────────────────────────────────────────
 
-def build_model(input_shape: tuple):
-    import tensorflow as tf
-    from tensorflow.keras import layers, Model
-
-    inputs = tf.keras.Input(shape=input_shape)
-    x = layers.LSTM(64, return_sequences=True, dropout=0.2, recurrent_dropout=0.1)(inputs)
-    x = layers.LSTM(32, dropout=0.2)(x)
-    x = layers.Dense(16, activation="relu")(x)
-    x = layers.Dropout(0.3)(x)
-    outputs = layers.Dense(1, activation="sigmoid")(x)
-
-    model = Model(inputs, outputs)
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(1e-3),
-        loss="binary_crossentropy",
-        metrics=["accuracy", tf.keras.metrics.AUC(name="auc")],
-    )
-    return model
+import torch
+import torch.nn as nn
 
 
-def export_tflite(model, output_path: str):
-    import tensorflow as tf
-    converter = tf.lite.TFLiteConverter.from_keras_model(model)
-    converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    tflite_model = converter.convert()
-    with open(output_path, "wb") as f:
-        f.write(tflite_model)
-    print(f"TFLite model → {output_path}")
+class StressLSTM(nn.Module):
+    def __init__(self, input_size=6, hidden1=64, hidden2=32, fc_size=16, dropout=0.2):
+        super().__init__()
+        self.lstm1   = nn.LSTM(input_size, hidden1, batch_first=True, dropout=dropout)
+        self.lstm2   = nn.LSTM(hidden1, hidden2, batch_first=True, dropout=dropout)
+        self.dropout = nn.Dropout(0.3)
+        self.fc1     = nn.Linear(hidden2, fc_size)
+        self.relu    = nn.ReLU()
+        self.fc2     = nn.Linear(fc_size, 1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        out, _ = self.lstm1(x)
+        out, _ = self.lstm2(out)
+        out = out[:, -1, :]          # last time step
+        out = self.dropout(out)
+        out = self.relu(self.fc1(out))
+        out = self.sigmoid(self.fc2(out))
+        return out.squeeze(1)
 
 
-# ─── Main ──────────────────────────────────────────────────────────────────────
+# ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main(n_samples: int, epochs: int, output_dir: str):
-    import tensorflow as tf
-    from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n🌱 Generating {n_samples} synthetic crop stress sequences…")
+    torch.manual_seed(SEED)
+
+    print(f"\nGenerating {n_samples} synthetic crop stress sequences...")
     X_raw, y = generate_dataset(n_samples)
-    print(f"   Class distribution: healthy={int(y.sum() == 0)} | stressed={int(y.sum())}")
 
-    # Normalise each feature independently (fit on train only)
     N, T, F = X_raw.shape
-    X_flat = X_raw.reshape(N * T, F)
+    X_flat  = X_raw.reshape(N * T, F)
 
-    scaler = MinMaxScaler()
+    scaler   = MinMaxScaler()
     X_scaled = scaler.fit_transform(X_flat).reshape(N, T, F)
 
-    # Save scaler
     scaler_path = output / "lstm_scaler.pkl"
     with open(scaler_path, "wb") as f:
         pickle.dump(scaler, f)
-    print(f"   Scaler saved → {scaler_path}")
+    print(f"  Scaler saved -> {scaler_path}")
 
-    # Train/val/test split
     X_train, X_test, y_train, y_test = train_test_split(
         X_scaled, y, test_size=0.15, random_state=SEED, stratify=y
     )
     X_train, X_val, y_train, y_val = train_test_split(
         X_train, y_train, test_size=0.15, random_state=SEED, stratify=y_train
     )
+    print(f"  Train: {len(X_train)} | Val: {len(X_val)} | Test: {len(X_test)}")
 
-    print(f"   Train: {len(X_train)} | Val: {len(X_val)} | Test: {len(X_test)}")
+    # Convert to tensors
+    def to_tensor(X, y):
+        return (torch.tensor(X, dtype=torch.float32),
+                torch.tensor(y, dtype=torch.float32))
 
-    print("\n🧠 Training LSTM model…")
-    model = build_model(input_shape=(T, F))
-    model.summary()
+    Xt, yt       = to_tensor(X_train, y_train)
+    Xv, yv       = to_tensor(X_val,   y_val)
+    Xte, yte     = to_tensor(X_test,  y_test)
 
-    callbacks = [
-        EarlyStopping(patience=8, restore_best_weights=True, monitor="val_auc", mode="max"),
-        ReduceLROnPlateau(factor=0.5, patience=4, monitor="val_loss"),
-    ]
+    model     = StressLSTM()
+    criterion = nn.BCELoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=4, factor=0.5)
 
-    history = model.fit(
-        X_train, y_train,
-        validation_data=(X_val, y_val),
-        epochs=epochs,
-        batch_size=64,
-        callbacks=callbacks,
-        verbose=1,
-    )
+    best_val_loss = float("inf")
+    best_state    = None
+    patience_cnt  = 0
+    PATIENCE      = 8
+    BATCH         = 64
 
-    # ── Evaluate ─────────────────────────────────────────────────────────────
-    print("\n📊 Test evaluation:")
-    loss, acc, auc = model.evaluate(X_test, y_test, verbose=0)
-    print(f"   Loss: {loss:.4f} | Accuracy: {acc:.4f} | AUC: {auc:.4f}")
+    print("\nTraining LSTM model...")
+    for epoch in range(epochs):
+        model.train()
+        idx = torch.randperm(len(Xt))
+        train_loss = 0.0
+        for i in range(0, len(Xt), BATCH):
+            b = idx[i:i+BATCH]
+            optimizer.zero_grad()
+            loss = criterion(model(Xt[b]), yt[b])
+            loss.backward()
+            optimizer.step()
+            train_loss += loss.item() * len(b)
+        train_loss /= len(Xt)
 
-    y_pred = (model.predict(X_test, verbose=0) > 0.5).astype(int).flatten()
-    print(classification_report(y_test, y_pred, target_names=["Healthy", "Stressed"]))
+        model.eval()
+        with torch.no_grad():
+            val_loss = criterion(model(Xv), yv).item()
+        scheduler.step(val_loss)
 
-    # ── Save ─────────────────────────────────────────────────────────────────
-    h5_path = str(output / "stress_lstm.h5")
-    model.save(h5_path)
-    print(f"\n✅ Keras model → {h5_path}")
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_state    = {k: v.clone() for k, v in model.state_dict().items()}
+            patience_cnt  = 0
+        else:
+            patience_cnt += 1
 
-    export_tflite(model, str(output / "stress_lstm.tflite"))
+        if (epoch + 1) % 5 == 0:
+            print(f"  Epoch {epoch+1:3d}/{epochs} | train_loss={train_loss:.4f} | val_loss={val_loss:.4f}")
 
-    # Save metadata
+        if patience_cnt >= PATIENCE:
+            print(f"  Early stopping at epoch {epoch+1}")
+            break
+
+    model.load_state_dict(best_state)
+
+    # Evaluate
+    model.eval()
+    with torch.no_grad():
+        probs = model(Xte).numpy()
+        preds = (probs > 0.5).astype(int)
+    acc = (preds == yte.numpy().astype(int)).mean()
+    auc = roc_auc_score(yte.numpy(), probs)
+    print(f"\nTest  Accuracy: {acc:.4f} | AUC: {auc:.4f}")
+    print(classification_report(yte.numpy().astype(int), preds, target_names=["Healthy", "Stressed"]))
+
+    # Save
+    pt_path = output / "stress_lstm.pt"
+    torch.save({"model_state": best_state, "architecture": "StressLSTM"}, str(pt_path))
+    print(f"Model saved -> {pt_path}")
+
     meta = {
-        "features": ["NDVI", "EVI", "NDWI", "soil_moisture", "temp_c", "humidity_pct"],
-        "sequence_length": SEQUENCE_LENGTH,
-        "n_features": N_FEATURES,
-        "test_accuracy": round(float(acc), 4),
-        "test_auc": round(float(auc), 4),
+        "features":          ["NDVI", "EVI", "NDWI", "soil_moisture", "temp_c", "humidity_pct"],
+        "sequence_length":   SEQUENCE_LENGTH,
+        "n_features":        N_FEATURES,
+        "test_accuracy":     round(float(acc), 4),
+        "test_auc":          round(float(auc), 4),
         "n_training_samples": n_samples,
+        "framework":         "pytorch",
     }
     with open(output / "lstm_metadata.json", "w") as f:
         json.dump(meta, f, indent=2)
-    print(f"   Metadata → {output / 'lstm_metadata.json'}")
+    print(f"Metadata saved -> {output / 'lstm_metadata.json'}")
 
 
 if __name__ == "__main__":

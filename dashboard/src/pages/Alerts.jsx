@@ -1,140 +1,222 @@
 import { useState, useEffect } from 'react';
-import { Bell, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
-import { getAlerts, acknowledgeAlert } from '../utils/api';
+import { Bell, CheckCircle, AlertTriangle, Clock, RefreshCw } from 'lucide-react';
+import { getAlerts, acknowledgeAlert, deleteAlert } from '../utils/api';
+import toast from 'react-hot-toast';
 
-const SEVERITY_STYLE = {
-  High:     { color: 'var(--accent-red)',    bg: 'rgba(239,83,80,0.08)',   border: 'var(--accent-red)' },
-  Medium:   { color: 'var(--accent-amber)',  bg: 'rgba(255,179,0,0.08)',   border: 'var(--accent-amber)' },
-  Low:      { color: 'var(--green-400)',     bg: 'rgba(76,175,80,0.08)',   border: 'var(--green-400)' },
+const SEV = {
+  High:   { color: '#ef5350', bg: 'rgba(239,83,80,0.08)',   border: '#ef5350'  },
+  Medium: { color: '#ffb300', bg: 'rgba(255,179,0,0.08)',   border: '#ffb300'  },
+  Low:    { color: '#66bb6a', bg: 'rgba(102,187,106,0.08)', border: '#66bb6a'  },
 };
 
-// Demo alerts for when backend has none
-const DEMO_ALERTS = [
-  {
-    id: 'demo-1', field_id: 'field-1', alert_type: 'NDVI Crash',
-    severity: 'High', message: 'NDVI dropped by 0.18 in the last 7 days for Field A (Punjab). Possible pest attack or drought stress.',
-    triggered_at: new Date(Date.now() - 2 * 3600000).toISOString(), acknowledged: false,
-  },
-  {
-    id: 'demo-2', field_id: 'field-2', alert_type: 'Pest Risk',
-    severity: 'Medium', message: 'Rice Blast risk elevated for Field B. Temperature 26°C + Humidity 93% + Leaf wetness > 10 hrs.',
-    triggered_at: new Date(Date.now() - 8 * 3600000).toISOString(), acknowledged: false,
-  },
-  {
-    id: 'demo-3', field_id: 'field-1', alert_type: 'Soil Moisture',
-    severity: 'High', message: 'Soil moisture critical (<18% VWC) for 4 consecutive days in Field A. Irrigate immediately.',
-    triggered_at: new Date(Date.now() - 24 * 3600000).toISOString(), acknowledged: true,
-  },
-];
+const TYPE_LABEL = {
+  ndvi_drop:      'NDVI Drop',
+  drought_stress: 'Drought Stress',
+  low_vegetation: 'Low Vegetation',
+  chlorophyll_low:'Chlorophyll Low',
+  bare_soil_risk: 'Bare Soil Risk',
+  pest_risk_high: 'Pest Risk — High',
+  pest_risk_medium:'Pest Risk — Medium',
+  disease_detected:'Disease Detected',
+  irrigation_needed:'Irrigation Needed',
+  frost_risk:     'Frost Risk',
+  spray_warning:  'Spray Warning',
+};
+
+function AlertRow({ alert, onAck, onDelete }) {
+  const s = SEV[alert.severity] || SEV.Low;
+  const label = TYPE_LABEL[alert.alert_type] || alert.alert_type?.replace(/_/g, ' ');
+
+  return (
+    <div style={{
+      padding: '14px 16px', marginBottom: 10,
+      background: s.bg, borderRadius: 10,
+      borderLeft: `3px solid ${s.border}`,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <AlertTriangle size={17} color={s.color} />
+          <div>
+            <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{label}</span>
+            <span style={{
+              marginLeft: 8, fontSize: '0.72rem', padding: '2px 8px', borderRadius: 20,
+              background: `${s.color}22`, color: s.color, border: `1px solid ${s.color}`,
+            }}>{alert.severity}</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          {!alert.acknowledged && (
+            <button
+              className="btn btn-ghost"
+              style={{ fontSize: '0.78rem', padding: '5px 12px' }}
+              onClick={() => onAck(alert.id)}
+            >
+              <CheckCircle size={13} /> Acknowledge
+            </button>
+          )}
+          <button
+            className="btn btn-ghost"
+            style={{ fontSize: '0.78rem', padding: '5px 10px', color: '#ef5350' }}
+            onClick={() => onDelete(alert.id)}
+          >
+            ×
+          </button>
+        </div>
+      </div>
+      <p style={{ margin: '8px 0 6px 27px', fontSize: '0.83rem', color: '#2e7d32', lineHeight: 1.55 }}>
+        {alert.message}
+      </p>
+      <div style={{ display: 'flex', gap: 16, marginLeft: 27, fontSize: '0.75rem', color: '#4a6650' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <Clock size={11} /> {new Date(alert.triggered_at).toLocaleString('en-IN')}
+        </span>
+        {alert.triggered_by && <span>Source: {alert.triggered_by}</span>}
+      </div>
+    </div>
+  );
+}
 
 export default function Alerts() {
-  const [alerts, setAlerts] = useState(DEMO_ALERTS);
+  const [alerts,   setAlerts]   = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [filter,   setFilter]   = useState('active'); // 'active' | 'all'
 
-  function handleAck(id) {
-    setAlerts(prev => prev.map(a => a.id === id ? { ...a, acknowledged: true } : a));
+  async function load() {
+    setLoading(true);
+    try {
+      const r = await getAlerts(filter === 'active');
+      setAlerts(r.data || []);
+    } catch {
+      // Fall back to empty
+      setAlerts([]);
+    }
+    setLoading(false);
   }
 
-  const active = alerts.filter(a => !a.acknowledged);
-  const resolved = alerts.filter(a => a.acknowledged);
+  useEffect(() => { load(); }, [filter]);
+
+  async function handleAck(id) {
+    try {
+      await acknowledgeAlert(id);
+      setAlerts(prev => prev.map(a => a.id === id ? { ...a, acknowledged: true } : a));
+      toast.success('Alert acknowledged');
+    } catch { toast.error('Failed to acknowledge'); }
+  }
+
+  async function handleDelete(id) {
+    try {
+      await deleteAlert(id);
+      setAlerts(prev => prev.filter(a => a.id !== id));
+      toast.success('Alert removed');
+    } catch { toast.error('Failed to delete'); }
+  }
+
+  const active   = alerts.filter(a => !a.acknowledged);
+  const resolved = alerts.filter(a =>  a.acknowledged);
+  const high     = active.filter(a => a.severity === 'High').length;
+  const medium   = active.filter(a => a.severity === 'Medium').length;
 
   return (
     <div>
-      <div className="page-header">
-        <h1>Alerts</h1>
-        <p>Automated warnings for crop health anomalies, pest risks, and environmental stress</p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1>Alerts</h1>
+          <p>Automated satellite-driven warnings for crop health anomalies and environmental stress</p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            className={filter === 'active' ? 'btn btn-primary' : 'btn btn-ghost'}
+            style={{ fontSize: '0.82rem' }}
+            onClick={() => setFilter('active')}
+          >Active</button>
+          <button
+            className={filter === 'all' ? 'btn btn-primary' : 'btn btn-ghost'}
+            style={{ fontSize: '0.82rem' }}
+            onClick={() => setFilter('all')}
+          >All</button>
+          <button className="btn btn-ghost" style={{ fontSize: '0.82rem' }} onClick={load}>
+            <RefreshCw size={14} />
+          </button>
+        </div>
       </div>
 
-      {/* Summary */}
+      {/* Summary cards */}
       <div className="grid-3 mb-24">
         <div className="card animate-in" style={{ textAlign: 'center' }}>
-          <AlertTriangle size={28} color="var(--accent-red)" />
-          <div style={{ fontSize: '2.5rem', fontWeight: 800, marginTop: 8 }}>
-            {active.filter(a => a.severity === 'High').length}
-          </div>
+          <AlertTriangle size={26} color="#ef5350" />
+          <div style={{ fontSize: '2.2rem', fontWeight: 800, marginTop: 6 }}>{high}</div>
           <div className="text-xs text-muted">High Severity</div>
         </div>
         <div className="card animate-in animate-in-delay-1" style={{ textAlign: 'center' }}>
-          <Bell size={28} color="var(--accent-amber)" />
-          <div style={{ fontSize: '2.5rem', fontWeight: 800, marginTop: 8 }}>{active.length}</div>
+          <Bell size={26} color="#ffb300" />
+          <div style={{ fontSize: '2.2rem', fontWeight: 800, marginTop: 6 }}>{active.length}</div>
           <div className="text-xs text-muted">Active Alerts</div>
         </div>
         <div className="card animate-in animate-in-delay-2" style={{ textAlign: 'center' }}>
-          <CheckCircle size={28} color="var(--green-400)" />
-          <div style={{ fontSize: '2.5rem', fontWeight: 800, marginTop: 8 }}>{resolved.length}</div>
+          <CheckCircle size={26} color="var(--green-400)" />
+          <div style={{ fontSize: '2.2rem', fontWeight: 800, marginTop: 6 }}>{resolved.length}</div>
           <div className="text-xs text-muted">Resolved</div>
         </div>
       </div>
 
-      {/* Active alerts */}
-      <div className="card mb-24 animate-in animate-in-delay-2">
-        <div className="card-header">
-          <div className="card-title"><Bell size={18} /> Active Alerts</div>
-          <span className="badge badge-red">{active.length} active</span>
+      {loading && (
+        <div className="loading-overlay" style={{ height: 200 }}>
+          <div className="spinner" /><p>Loading alerts…</p>
         </div>
+      )}
 
-        {active.length === 0 ? (
-          <div className="loading-overlay" style={{ padding: 30 }}>
-            <CheckCircle size={40} color="var(--green-400)" />
-            <p>All clear — no active alerts! 🎉</p>
-          </div>
-        ) : (
-          active.map(alert => {
-            const style = SEVERITY_STYLE[alert.severity] || SEVERITY_STYLE.Low;
-            return (
-              <div key={alert.id} style={{
-                padding: 16, marginBottom: 12,
-                background: style.bg, borderRadius: 'var(--radius-md)',
-                borderLeft: `3px solid ${style.border}`,
-              }}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-12">
-                    <AlertTriangle size={18} color={style.color} />
-                    <div>
-                      <strong>{alert.alert_type}</strong>
-                      <span className="badge ml-8" style={{ background: `${style.color}22`, color: style.color, marginLeft: 8 }}>
-                        {alert.severity}
-                      </span>
-                    </div>
-                  </div>
-                  <button className="btn btn-sm btn-secondary" onClick={() => handleAck(alert.id)}>
-                    <CheckCircle size={14} /> Acknowledge
-                  </button>
-                </div>
-                <p className="text-sm mt-8" style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                  {alert.message}
-                </p>
-                <div className="flex items-center gap-8 mt-8 text-xs text-muted">
-                  <Clock size={12} />
-                  {new Date(alert.triggered_at).toLocaleString()}
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* Resolved */}
-      {resolved.length > 0 && (
-        <div className="card animate-in">
-          <div className="card-header">
-            <div className="card-title"><CheckCircle size={18} /> Resolved</div>
-          </div>
-          {resolved.map(alert => (
-            <div key={alert.id} style={{
-              padding: 12, marginBottom: 8,
-              background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)',
-              opacity: 0.6,
-            }}>
-              <div className="flex items-center gap-12">
-                <CheckCircle size={16} color="var(--green-400)" />
-                <div>
-                  <strong className="text-sm">{alert.alert_type}</strong>
-                  <p className="text-xs text-muted mt-8">{alert.message}</p>
-                </div>
-              </div>
+      {!loading && (
+        <>
+          {/* Active */}
+          <div className="card mb-24 animate-in">
+            <div className="card-header">
+              <div className="card-title"><Bell size={18} /> Active Alerts</div>
+              {active.length > 0 && <span className="badge badge-red">{active.length}</span>}
             </div>
-          ))}
-        </div>
+            {active.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                <CheckCircle size={36} color="var(--green-400)" />
+                <p className="text-muted" style={{ marginTop: 10 }}>All clear — no active alerts!</p>
+                <p className="text-muted" style={{ fontSize: '0.82rem' }}>
+                  Alerts are auto-generated when satellite indices are computed for your fields.
+                </p>
+              </div>
+            ) : (
+              active.map(a => <AlertRow key={a.id} alert={a} onAck={handleAck} onDelete={handleDelete} />)
+            )}
+          </div>
+
+          {/* Resolved */}
+          {resolved.length > 0 && (
+            <div className="card animate-in">
+              <div className="card-header">
+                <div className="card-title"><CheckCircle size={18} /> Resolved</div>
+              </div>
+              {resolved.map(a => (
+                <div key={a.id} style={{
+                  padding: '10px 14px', marginBottom: 8, opacity: 0.55,
+                  background: 'rgba(67,160,71,0.03)', borderRadius: 8,
+                  display: 'flex', alignItems: 'center', gap: 10,
+                }}>
+                  <CheckCircle size={15} color="var(--green-400)" />
+                  <div>
+                    <span style={{ fontWeight: 600, fontSize: '0.84rem' }}>
+                      {TYPE_LABEL[a.alert_type] || a.alert_type}
+                    </span>
+                    <p style={{ margin: '3px 0 0', fontSize: '0.78rem', color: '#4a6650' }}>
+                      {a.message?.slice(0, 80)}…
+                    </p>
+                  </div>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#ef5350', padding: '4px 8px' }}
+                    onClick={() => handleDelete(a.id)}
+                  >×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

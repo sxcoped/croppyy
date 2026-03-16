@@ -1,25 +1,26 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   Croppy Design System — Dark agricultural dashboard
+   Croppy Design System — Fresh Green & White agricultural dashboard
    ═══════════════════════════════════════════════════════════════════════════ */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
 
 /* ─── Tokens ──────────────────────────────────────────────────────────────── */
 :root {
   /* Base palette */
-  --bg-primary:    #0a0f0d;
-  --bg-secondary:  #111916;
-  --bg-card:       #161f1b;
-  --bg-card-hover: #1c2723;
-  --bg-elevated:   #1e2a24;
+  --bg-primary:    #f2f7f4;
+  --bg-secondary:  #ffffff;
+  --bg-card:       #ffffff;
+  --bg-card-hover: #f9fbf9;
+  --bg-elevated:   #ffffff;
   
   /* Glass */
-  --glass-bg:      rgba(22, 31, 27, 0.75);
-  --glass-border:  rgba(76, 175, 80, 0.12);
-  --glass-shadow:  0 8px 32px rgba(0, 0, 0, 0.4);
+  --glass-bg:      rgba(255, 255, 255, 0.85);
+  --glass-border:  rgba(67, 160, 71, 0.2);
+  --glass-shadow:  0 8px 32px rgba(0, 0, 0, 0.05);
   
   /* Greens (brand) */
-  --green-50:  #e8f5e9;
+  --green-50:  #1b5e20;
   --green-100: #c8e6c9;
   --green-200: #a5d6a7;
   --green-300: #81c784;
@@ -31,29 +32,29 @@
   --green-900: #1b5e20;
   
   /* Accent */
-  --accent-cyan:    #26c6da;
+  --accent-cyan:    #00acc1;
   --accent-amber:   #ffb300;
-  --accent-orange:  #ff7043;
-  --accent-red:     #ef5350;
-  --accent-purple:  #ab47bc;
+  --accent-orange:  #f4511e;
+  --accent-red:     #e53935;
+  --accent-purple:  #8e24aa;
   
   /* Health zones */
-  --zone-critical:  #ef5350;
-  --zone-poor:      #ff7043;
+  --zone-critical:  #e53935;
+  --zone-poor:      #f4511e;
   --zone-moderate:  #ffb300;
-  --zone-good:      #66bb6a;
-  --zone-excellent: #26a69a;
+  --zone-good:      #43a047;
+  --zone-excellent: #00897b;
   
   /* Text */
-  --text-primary:   #e8f5e9;
-  --text-secondary: #a5d6a7;
-  --text-muted:     #6b8a72;
-  --text-dim:       #4a6650;
+  --text-primary:   #1b5e20;
+  --text-secondary: #2e7d32;
+  --text-muted:     #4a6650;
+  --text-dim:       #6b8a72;
   
   /* Borders */
-  --border-subtle:  rgba(76, 175, 80, 0.1);
-  --border-medium:  rgba(76, 175, 80, 0.2);
-  --border-strong:  rgba(76, 175, 80, 0.35);
+  --border-subtle:  rgba(67, 160, 71, 0.15);
+  --border-medium:  rgba(67, 160, 71, 0.3);
+  --border-strong:  rgba(67, 160, 71, 0.5);
   
   /* Radius */
   --radius-sm:  6px;
@@ -89,7 +90,7 @@ html {
 
 body {
   background: var(--bg-primary);
-  color: var(--text-primary);
+  color: #1b5e20;
   min-height: 100vh;
   overflow-x: hidden;
 }
@@ -105,7 +106,7 @@ a:hover { color: var(--green-300); }
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--text-dim); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+::-webkit-scrollbar-thumb:hover { background: #4a6650; }
 
 /* ─── Layout ──────────────────────────────────────────────────────────────── */
 .app-layout {
@@ -148,7 +149,7 @@ a:hover { color: var(--green-300); }
 .card-title {
   font-size: 1rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: #1b5e20;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -176,7 +177,7 @@ a:hover { color: var(--green-300); }
 .index-label {
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--text-muted);
+  color: #4a6650;
   text-transform: uppercase;
   letter-spacing: 1px;
 }
@@ -231,12 +232,12 @@ a:hover { color: var(--green-300); }
 .page-header h1 {
   font-size: 1.75rem;
   font-weight: 700;
-  color: var(--text-primary);
+  color: #1b5e20;
   margin-bottom: 4px;
 }
 
 .page-header p {
-  color: var(--text-muted);
+  color: #4a6650;
   font-size: 0.9rem;
 }
 
@@ -267,7 +268,7 @@ a:hover { color: var(--green-300); }
 
 .btn-secondary {
   background: var(--bg-elevated);
-  color: var(--text-secondary);
+  color: #2e7d32;
   border: 1px solid var(--border-subtle);
 }
 .btn-secondary:hover {
@@ -286,7 +287,7 @@ a:hover { color: var(--green-300); }
   padding: 10px 14px;
   font-family: inherit;
   font-size: 0.85rem;
-  color: var(--text-primary);
+  color: #1b5e20;
   transition: border-color var(--transition-fast);
   width: 100%;
 }
@@ -303,7 +304,7 @@ label {
   display: block;
   font-size: 0.78rem;
   font-weight: 600;
-  color: var(--text-muted);
+  color: #4a6650;
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -322,7 +323,7 @@ label {
   letter-spacing: 0.5px;
 }
 
-.badge-green   { background: rgba(76,175,80,0.12); color: var(--green-400); }
+.badge-green   { background: rgba(67,160,71,0.12); color: var(--green-400); }
 .badge-amber   { background: rgba(255,179,0,0.12); color: var(--accent-amber); }
 .badge-red     { background: rgba(239,83,80,0.12); color: var(--accent-red); }
 .badge-cyan    { background: rgba(38,198,218,0.12); color: var(--accent-cyan); }
@@ -349,7 +350,7 @@ label {
 }
 
 .stat-info { flex: 1; }
-.stat-info .label { font-size: 0.75rem; color: var(--text-muted); }
+.stat-info .label { font-size: 0.75rem; color: #4a6650; }
 .stat-info .value { font-size: 1.1rem; font-weight: 700; }
 
 /* ─── Loading spinner ─────────────────────────────────────────────────────── */
@@ -371,7 +372,7 @@ label {
   justify-content: center;
   gap: 12px;
   padding: 60px;
-  color: var(--text-muted);
+  color: #4a6650;
 }
 
 /* ─── Map container ───────────────────────────────────────────────────────── */
@@ -425,7 +426,7 @@ th {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: var(--text-muted);
+  color: #4a6650;
   border-bottom: 1px solid var(--border-medium);
 }
 
@@ -447,7 +448,7 @@ tr:hover td {
 
 /* Recharts overrides for dark theme */
 .recharts-cartesian-grid line { stroke: var(--border-subtle); }
-.recharts-text { fill: var(--text-muted) !important; font-size: 11px; }
+.recharts-text { fill: #4a6650 !important; font-size: 11px; }
 .recharts-tooltip-wrapper .recharts-default-tooltip {
   background: var(--bg-card) !important;
   border: 1px solid var(--glass-border) !important;
@@ -458,7 +459,7 @@ tr:hover td {
 .leaflet-tile-pane { filter: brightness(0.7) contrast(1.1) saturate(0.85); }
 .leaflet-control-zoom a {
   background: var(--bg-card) !important;
-  color: var(--text-primary) !important;
+  color: #1b5e20 !important;
   border-color: var(--border-subtle) !important;
 }
 
@@ -480,6 +481,6 @@ tr:hover td {
 .text-center { text-align: center; }
 .text-sm { font-size: 0.85rem; }
 .text-xs { font-size: 0.75rem; }
-.text-muted { color: var(--text-muted); }
+.text-muted { color: #4a6650; }
 .font-bold { font-weight: 700; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

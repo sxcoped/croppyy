@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Leaf, Loader, AlertCircle, Satellite, Bug, CloudRain, BarChart3 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../utils/supabase';
@@ -14,16 +14,15 @@ const FEATURES = [
 ];
 
 export default function Login() {
-  const navigate   = useNavigate();
-  const location   = useLocation();
-  const { signIn } = useAuth();
+  const { signIn, enterDemo } = useAuth();
+  const navigate = useNavigate();
 
-  const from = location.state?.from?.pathname || '/';
-
-  const [email,    setEmail]    = useState('');
-  const [password, setPassword] = useState('');
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState('');
+  const [email,         setEmail]         = useState('');
+  const [password,      setPassword]      = useState('');
+  const [loading,       setLoading]       = useState(false);
+  const [error,         setError]         = useState('');
+  const [confirming,    setConfirming]    = useState(false);
+  const [needsConfirm,  setNeedsConfirm]  = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -31,13 +30,25 @@ export default function Login() {
     setLoading(true);
 
     try {
-      await signIn({ email, password });
-      toast.success('Welcome back! 🌿');
-      navigate(from, { replace: true });
+      const data = await signIn({ email, password });
+      toast.success('Welcome back!');
+      // Explicit navigation as a fallback in case onAuthStateChange is slow
+      if (data?.session) {
+        navigate('/', { replace: true });
+      }
     } catch (err) {
-      setError(err.message || 'Invalid email or password');
+      // Map Supabase error codes to friendly messages
+      const msg = err.message || '';
+      if (msg.toLowerCase().includes('email not confirmed')) {
+        setError('Your email isn\'t confirmed yet.');
+        setNeedsConfirm(true);
+      } else if (msg.toLowerCase().includes('invalid login') || msg.toLowerCase().includes('invalid credentials')) {
+        setError('Incorrect email or password. Please try again.');
+      } else {
+        setError(msg || 'Sign-in failed. Please try again.');
+      }
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   return (
@@ -81,6 +92,40 @@ export default function Login() {
             </div>
           )}
 
+          {needsConfirm && (
+            <button
+              type="button"
+              disabled={confirming || !email}
+              style={{
+                width: '100%', padding: '10px', marginBottom: 8,
+                background: 'rgba(67,160,71,0.12)', border: '1px solid #43a047',
+                borderRadius: 8, color: '#43a047', fontWeight: 600,
+                fontSize: '0.85rem', cursor: confirming ? 'wait' : 'pointer',
+              }}
+              onClick={async () => {
+                if (!email) { toast.error('Enter your email above first'); return; }
+                setConfirming(true);
+                try {
+                  const res = await fetch('http://localhost:8000/api/auth/dev-confirm-email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email }),
+                  });
+                  const data = await res.json();
+                  if (!res.ok) throw new Error(data.detail || 'Failed');
+                  toast.success('Email confirmed! Try signing in now.');
+                  setNeedsConfirm(false);
+                  setError('');
+                } catch (e) {
+                  toast.error(e.message || 'Could not confirm email');
+                }
+                setConfirming(false);
+              }}
+            >
+              {confirming ? 'Confirming…' : '✓ Confirm my email for this device'}
+            </button>
+          )}
+
           <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label>Email Address</label>
@@ -111,7 +156,13 @@ export default function Login() {
               <a
                 href="#"
                 style={{ fontSize: '0.82rem', color: 'var(--green-400)', textDecoration: 'none' }}
-                onClick={e => { e.preventDefault(); toast('Password reset via email — contact admin for now'); }}
+                onClick={async e => {
+                  e.preventDefault();
+                  if (!email) { toast.error('Enter your email address first'); return; }
+                  const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email);
+                  if (resetErr) toast.error(resetErr.message);
+                  else toast.success('Password reset email sent — check your inbox');
+                }}
               >
                 Forgot password?
               </a>
@@ -122,6 +173,16 @@ export default function Login() {
               {loading ? 'Signing in…' : 'Sign In'}
             </button>
           </form>
+
+          {/* Demo mode */}
+          <button
+            type="button"
+            className="auth-submit-btn"
+            style={{ background: 'var(--bg-secondary)', color: 'var(--green-400)', border: '1px solid var(--green-400)', marginTop: 8 }}
+            onClick={enterDemo}
+          >
+            <Leaf size={16} /> Try Demo (no account needed)
+          </button>
 
           {/* Google OAuth */}
           <div className="auth-divider">or continue with</div>

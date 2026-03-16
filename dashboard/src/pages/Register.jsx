@@ -9,6 +9,8 @@ import { supabase } from '../utils/supabase';
 import toast from 'react-hot-toast';
 import './Auth.css';
 
+import { INDIAN_STATES, DISTRICTS_BY_STATE } from '../utils/indiaData';
+
 const ROLES = [
   { value: 'farmer',     label: '👨‍🌾 Farmer' },
   { value: 'agronomist', label: '🔬 Agronomist' },
@@ -60,9 +62,9 @@ export default function Register() {
         state:    form.state || undefined,
         district: form.district || undefined,
       });
-      setSuccess('Account created! Check your email to confirm, then log in.');
-      toast.success('Welcome to Croppy! 🌱');
-      setTimeout(() => navigate('/login'), 2500);
+      setSuccess('Account created! Setting up your farm…');
+      toast.success('Welcome to Croppy!');
+      setTimeout(() => navigate('/onboard'), 1800);
     } catch (err) {
       setError(err.message || 'Registration failed. Please try again.');
     }
@@ -174,17 +176,24 @@ export default function Register() {
             <div className="form-row">
               <div className="form-group">
                 <label>State</label>
-                <input
-                  className="input" placeholder="Punjab"
-                  value={form.state} onChange={e => update('state', e.target.value)}
-                />
+                <select className="select" value={form.state} onChange={e => update('state', e.target.value)}>
+                  <option value="">Select state</option>
+                  {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
               </div>
               <div className="form-group">
                 <label>District</label>
-                <input
-                  className="input" placeholder="Ludhiana"
-                  value={form.district} onChange={e => update('district', e.target.value)}
-                />
+                <select
+                  className="select"
+                  value={form.district}
+                  onChange={e => update('district', e.target.value)}
+                  disabled={!form.state}
+                >
+                  <option value="">{form.state ? 'Select district' : 'Select state first'}</option>
+                  {(DISTRICTS_BY_STATE[form.state] || []).map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
               </div>
             </div>
 

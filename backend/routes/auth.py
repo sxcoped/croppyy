@@ -9,6 +9,7 @@ from backend.core.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 from backend.core.supabase_client import get_supabase
 from backend.core.auth import get_current_user
 from supabase import create_client
+import httpx
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -175,3 +176,50 @@ def update_profile(body: ProfileUpdate, user: dict = Depends(get_current_user)):
 def logout(user: dict = Depends(get_current_user)):
     # Supabase handles token invalidation client-side; server can't invalidate JWTs without a blocklist
     return {"message": "Logged out successfully — discard your tokens"}
+
+
+class ConfirmEmailRequest(BaseModel):
+    email: str
+
+
+@router.post("/dev-confirm-email", summary="Force-confirm a user's email via admin API (dev only)")
+async def dev_confirm_email(req: ConfirmEmailRequest):
+    """
+    Workaround for localhost dev: confirms email without clicking the link.
+    Remove this endpoint before going to production.
+    """
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+
+    headers = {
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Content-Type": "application/json",
+    }
+    base = SUPABASE_URL.rstrip("/")
+
+    async with httpx.AsyncClient() as client:
+        # 1. Find the user by email
+        resp = await client.get(
+            f"{base}/auth/v1/admin/users",
+            headers=headers,
+            params={"page": 1, "per_page": 1000},
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="Failed to list users from Supabase")
+
+        users = resp.json().get("users", [])
+        user = next((u for u in users if u.get("email") == req.email), None)
+        if not user:
+            raise HTTPException(status_code=404, detail="No account found with that email")
+
+        # 2. Force-confirm the email
+        patch = await client.put(
+            f"{base}/auth/v1/admin/users/{user['id']}",
+            headers=headers,
+            json={"email_confirm": True},
+        )
+        if patch.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"Confirmation failed: {patch.text}")
+
+    return {"message": f"Email confirmed for {req.email}. You can now sign in."}

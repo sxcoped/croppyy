@@ -7,7 +7,7 @@ load_dotenv()
 GEE_PROJECT_ID      = os.getenv("GEE_PROJECT_ID", "croppy-471110")
 
 # Weather
-OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "")
+OPENWEATHER_API_KEY    = os.getenv("OPENWEATHER_API_KEY", "")
 
 # Supabase
 SUPABASE_URL        = os.getenv("SUPABASE_URL", "")

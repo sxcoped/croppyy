@@ -37,7 +37,7 @@
   display: block;
   font-size: 1.2rem;
   font-weight: 800;
-  color: var(--text-primary);
+  color: #1b5e20;
   letter-spacing: -0.3px;
 }
 
@@ -65,7 +65,7 @@
   gap: 12px;
   padding: 10px 14px;
   border-radius: var(--radius-md);
-  color: var(--text-muted);
+  color: #4a6650;
   font-size: 0.85rem;
   font-weight: 500;
   text-decoration: none;
@@ -75,7 +75,7 @@
 
 .nav-item:hover {
   background: var(--bg-card);
-  color: var(--text-secondary);
+  color: #2e7d32;
 }
 
 .nav-item.active {
@@ -156,7 +156,7 @@
 .user-name {
   font-size: 0.82rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: #1b5e20;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -208,7 +208,7 @@
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   font-size: 0.82rem;
-  color: var(--text-secondary);
+  color: #2e7d32;
   cursor: pointer;
   width: 100%;
   border: none;
@@ -217,7 +217,7 @@
   transition: background var(--transition-fast);
 }
 
-.user-menu-item:hover { background: var(--bg-card); color: var(--text-primary); }
+.user-menu-item:hover { background: var(--bg-card); color: #1b5e20; }
 .user-menu-item.danger { color: var(--accent-red); }
 .user-menu-item.danger:hover { background: rgba(239,83,80,0.1); }
 
