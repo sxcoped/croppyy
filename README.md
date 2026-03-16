@@ -1,4 +1,4 @@
-# 🌾 Croppy — AI-Powered Precision Agriculture Platform
+#  Croppy — AI-Powered Precision Agriculture Platform
 
 > **SIH Problem ID: 25099 · MathWorks India**
 > Satellite intelligence + AI inference for Indian farmers. Detect crop disease, track vegetation health from space, forecast stress, and never miss a pest outbreak.
@@ -35,7 +35,7 @@ Croppy is a full-stack precision agriculture platform that combines **Sentinel-2
 ┌─────────────────────────────────────────────────────────────────┐
 │                         CROPPY PLATFORM                         │
 │                                                                 │
-│   🛰️ Sentinel-2    🤖 CNN Disease    🌦️ OpenWeather             │
+│    Sentinel-2     CNN Disease     OpenWeather             │
 │   NASA SMAP        Detection         NASA POWER                 │
 │   CHIRPS Rainfall  LSTM Forecast     Agmarknet Prices           │
 │         │                │                │                     │
@@ -536,7 +536,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key
 VITE_API_URL=http://localhost:8000
 ```
 
-> ⚠️ **Never commit `.env` files.** The `.gitignore` already excludes them.
+> **Never commit `.env` files.** The `.gitignore` already excludes them.
 
 ---
 
@@ -1026,10 +1026,3 @@ npm run lint
 
 ---
 
-## License
-
-MathWorks India · SIH Problem ID 25099
-
----
-
-*Built with ❤️ for Indian farmers.*
