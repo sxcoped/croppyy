@@ -1,321 +1,308 @@
-#  Croppy — AI-Powered Precision Agriculture Platform
+# Croppy
 
-> **SIH Problem ID: 25099 · MathWorks India**
-> Satellite intelligence + AI inference for Indian farmers. Detect crop disease, track vegetation health from space, forecast stress, and never miss a pest outbreak.
+**AI-powered precision agriculture platform for Indian farmers.**
 
----
-
-## Table of Contents
-
-1. [Overview](#overview)
-2. [Feature Matrix](#feature-matrix)
-3. [System Architecture](#system-architecture)
-4. [Data Flow Diagrams](#data-flow-diagrams)
-5. [Directory Structure](#directory-structure)
-6. [Tech Stack](#tech-stack)
-7. [Prerequisites](#prerequisites)
-8. [Installation & Setup](#installation--setup)
-9. [Environment Variables](#environment-variables)
-10. [Running the App](#running-the-app)
-11. [Docker Deployment](#docker-deployment)
-12. [API Reference](#api-reference)
-13. [ML Models](#ml-models)
-14. [Database Schema](#database-schema)
-15. [Frontend Architecture](#frontend-architecture)
-16. [Authentication Flow](#authentication-flow)
-17. [Satellite Data Pipeline](#satellite-data-pipeline)
+Croppy combines Sentinel-2 satellite imagery, deep learning disease detection, IoT sensor ingestion, and real-time market data into a single dashboard. Farmers register their fields, draw boundaries on a map, and instantly receive vegetation health indices computed from space, weather forecasts, pest risk scores, crop advisories, and mandi price feeds.
 
 ---
 
-## Overview
+## What the Platform Does
 
-Croppy is a full-stack precision agriculture platform that combines **Sentinel-2 satellite imagery**, **AI disease detection**, **IoT sensor ingestion**, and **market price data** into a single dashboard for Indian farmers.
+Croppy serves three core functions:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         CROPPY PLATFORM                         │
-│                                                                 │
-│    Sentinel-2     CNN Disease     OpenWeather             │
-│   NASA SMAP        Detection         NASA POWER                 │
-│   CHIRPS Rainfall  LSTM Forecast     Agmarknet Prices           │
-│         │                │                │                     │
-│         └────────────────┴────────────────┘                     │
-│                          │                                      │
-│              ┌───────────▼────────────┐                        │
-│              │   FastAPI Backend      │                        │
-│              │   (Python 3.11)        │                        │
-│              └───────────┬────────────┘                        │
-│                          │                                      │
-│              ┌───────────▼────────────┐                        │
-│              │  React 19 Dashboard    │                        │
-│              │  (Vite + Tailwind)     │                        │
-│              └────────────────────────┘                        │
-└─────────────────────────────────────────────────────────────────┘
-```
+1. **Satellite-based field monitoring.** Every registered field is analysed through Google Earth Engine. Sentinel-2 imagery is filtered, composited, and reduced to seven spectral vegetation indices (NDVI, EVI, NDWI, NDRE, SAVI, BSI, NDMI). These indices are classified into health zones ranging from Critical to Excellent and displayed on the dashboard alongside true-color satellite thumbnails, 90-day vegetation trend charts, CHIRPS rainfall data, and NASA SMAP soil moisture readings.
 
----
+2. **AI crop disease detection.** A farmer photographs a leaf, uploads the image, and receives a diagnosis within 300 milliseconds. A MobileNetV2 model fine-tuned on the PlantVillage dataset classifies the image into one of 38 disease classes across 14 crop types. The response includes severity, a step-by-step treatment plan, symptoms, and prevention advice.
 
-## Feature Matrix
-
-| Feature | Status | Data Source |
-|---------|--------|-------------|
-| Sentinel-2 NDVI / EVI / NDWI / NDRE / SAVI / BSI / NDMI maps | ✅ | Google Earth Engine |
-| True Color satellite imagery | ✅ | GEE — Sentinel-2 SR |
-| 90-day vegetation trend timeseries | ✅ | GEE compositing |
-| CNN crop disease detection (38 classes) | ✅ | HuggingFace MobileNetV2 |
-| LSTM 7-day stress forecast | ✅ | Custom LSTM model |
-| Rule-based pest risk engine | ✅ | Weather + NDVI rules |
-| Current weather + 7-day forecast | ✅ | OpenWeatherMap API |
-| NASA SMAP soil moisture (satellite) | ✅ | GEE — SMAP L4 |
-| CHIRPS rainfall (30-day) | ✅ | GEE — CHIRPS |
-| Agmarknet mandi price feed | ✅ | Agmarknet scrape |
-| IoT sensor ingestion (JSON) | ✅ | REST endpoint |
-| Automated alert system | ✅ | Rule engine |
-| PDF report generation | ✅ | ReportLab |
-| Crop growth stage tracker | ✅ | Calendar-based |
-| Multi-language UI (EN/HI/TE/KN) | ✅ | i18next |
-| Google OAuth + email auth | ✅ | Supabase Auth |
-| Field polygon drawing | ✅ | Leaflet draw |
+3. **Decision support.** The platform aggregates weather forecasts (OpenWeatherMap and NASA POWER), LSTM-based 7-day stress forecasts, rule-based pest risk scoring, crop growth stage tracking, advisory card generation, Agmarknet mandi price feeds, and an automated alert system into actionable recommendations.
 
 ---
 
 ## System Architecture
 
-### High-Level Architecture
+```mermaid
+graph TB
+    subgraph User Layer
+        Browser["Browser / Mobile Browser<br>(React 19 SPA)"]
+    end
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                          USER DEVICES                                │
-│           Browser (React SPA)  ·  Mobile Browser                    │
-└─────────────────────────┬────────────────────────────────────────────┘
-                          │  HTTPS
-┌─────────────────────────▼────────────────────────────────────────────┐
-│                     REACT DASHBOARD  (Vite / React 19)               │
-│                                                                      │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐           │
-│  │Dashboard │  │ ScanCrop │  │FieldHlth │  │ Advisory │  ...       │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘           │
-│                                                                      │
-│  AuthContext (Supabase)  ·  i18n (4 langs)  ·  React Router v7     │
-└─────────────────────────┬────────────────────────────────────────────┘
-                          │  REST API calls (Axios)
-┌─────────────────────────▼────────────────────────────────────────────┐
-│                  FASTAPI BACKEND  (:8000)                            │
-│                                                                      │
-│  /api/rs/*       Remote Sensing (GEE)                               │
-│  /api/ml/*       ML Inference (Disease + LSTM)                      │
-│  /api/fields/*   Field CRUD (Supabase)                              │
-│  /api/weather/*  Weather (OWM + NASA POWER)                         │
-│  /api/alerts/*   Alert engine + ACK                                 │
-│  /api/market/*   Agmarknet mandi prices                             │
-│  /api/advisory/* Advisory engine                                    │
-│  /api/reports/*  PDF generation (ReportLab)                         │
-│  /api/sensors/*  IoT data ingestion                                 │
-│  /api/auth/*     Auth helpers                                       │
-└──────┬──────────────┬──────────────┬──────────────┬─────────────────┘
-       │              │              │              │
-┌──────▼──┐    ┌──────▼──┐   ┌──────▼──┐   ┌──────▼──────────────┐
-│  GEE    │    │HuggingFace│  │ OWM API │   │  Supabase           │
-│Sentinel-2│   │MobileNetV2│  │ NASA    │   │  (PostgreSQL)       │
-│SMAP/CHIRPS│  │ LSTM model│  │ POWER   │   │  Auth + Storage     │
-└─────────┘    └─────────┘   └─────────┘   └─────────────────────┘
-```
+    subgraph Frontend["React Dashboard (Vite + Tailwind)"]
+        Pages["Dashboard | ScanCrop | FieldHealth<br>Advisory | Alerts | Weather<br>MarketPrices | PestRisk | Reports<br>Sensors | Fields | Analysis"]
+        Auth["AuthContext (Supabase)"]
+        I18n["i18n (EN / HI / TE / KN)"]
+        Router["React Router v7"]
+    end
 
-### Backend Module Architecture
+    subgraph Backend["FastAPI Backend (:8000)"]
+        RS["/api/rs — Remote Sensing"]
+        ML["/api/ml — ML Inference"]
+        FieldsAPI["/api/fields — Field CRUD"]
+        WeatherAPI["/api/weather — Weather"]
+        AlertsAPI["/api/alerts — Alert Engine"]
+        MarketAPI["/api/market — Mandi Prices"]
+        AdvisoryAPI["/api/advisory — Advisories"]
+        ReportsAPI["/api/reports — PDF Generation"]
+        SensorsAPI["/api/sensors — IoT Ingestion"]
+    end
 
-```
-backend/
-├── main.py                   ← FastAPI app, CORS, router registration
-│
-├── core/
-│   ├── config.py             ← Environment variable loading
-│   ├── auth.py               ← JWT verification via Supabase
-│   └── supabase_client.py    ← Supabase service-role client
-│
-├── routes/                   ← HTTP layer (thin controllers)
-│   ├── rs.py                 ← Remote sensing endpoints
-│   ├── ml.py                 ← Disease detection + LSTM
-│   ├── fields.py             ← Field CRUD
-│   ├── weather.py            ← Weather + forecast
-│   ├── alerts.py             ← Alert list + acknowledge
-│   ├── advisory.py           ← Advisory card generation
-│   ├── market.py             ← Mandi price feed
-│   ├── sensors.py            ← IoT sensor ingestion
-│   ├── reports.py            ← PDF report generation
-│   ├── onboarding.py         ← First-field setup flow
-│   ├── insurance.py          ← Insurance helpers
-│   └── auth.py               ← Email confirm (dev helper)
-│
-├── services/                 ← Business logic layer
-│   ├── gee_service.py        ← All Google Earth Engine calls
-│   ├── disease_detection.py  ← CNN inference pipeline
-│   ├── lstm_service.py       ← LSTM forecast service
-│   ├── advisory_service.py   ← Rule engine for advisories
-│   ├── auto_alerts.py        ← Alert trigger rules
-│   ├── pest_risk.py          ← Pest risk scoring
-│   ├── weather_service.py    ← OWM + NASA POWER calls
-│   └── soilgrids_service.py  ← SoilGrids API calls
-│
-└── models/
-    └── schemas.py            ← Pydantic request/response models
+    subgraph External Services
+        GEE["Google Earth Engine<br>(Sentinel-2 / SMAP / CHIRPS)"]
+        HF["HuggingFace<br>(MobileNetV2)"]
+        OWM["OpenWeatherMap<br>+ NASA POWER"]
+        Supa["Supabase<br>(PostgreSQL + Auth)"]
+        Agmark["Agmarknet<br>(Market Prices)"]
+    end
+
+    Browser -->|HTTPS| Frontend
+    Frontend -->|REST / Axios| Backend
+    RS --> GEE
+    ML --> HF
+    WeatherAPI --> OWM
+    FieldsAPI --> Supa
+    AlertsAPI --> Supa
+    MarketAPI --> Agmark
+    Auth --> Supa
 ```
 
 ---
 
-## Data Flow Diagrams
+## Data Flow: Dashboard Load
 
-### 1. Dashboard Load Flow
+When a user opens the dashboard, the frontend loads their registered fields from Supabase, selects the first field, and fires eleven parallel API calls to populate every card on the screen.
 
-```
-User opens Dashboard
-        │
-        ▼
-Load fields from Supabase
-        │
-        ├── No fields? ──────────────────► Show "Register your first field"
-        │
-        ▼
-Select first field (lat/lon/polygon/crop_type)
-        │
-        ▼
-Fire 11 parallel API calls:
-        │
-        ├── GET /api/rs/indices        ── GEE Sentinel-2 ──► NDVI/EVI/NDWI/NDRE/SAVI/BSI/NDMI
-        ├── GET /api/weather/current   ── OpenWeatherMap ──► Temp, humidity, wind, rain
-        ├── GET /api/weather/forecast  ── OWM 7-day     ──► Daily temp/rain forecast
-        ├── GET /api/rs/timeseries     ── GEE 90-day    ──► Vegetation trend chart
-        ├── GET /api/alerts            ── Supabase      ──► Active alerts list
-        ├── GET /api/alerts/summary    ── Supabase      ──► High/medium counts
-        ├── GET /api/advisory          ── Rule engine   ──► Advisory cards
-        ├── GET /api/rs/rainfall       ── GEE CHIRPS    ──► 30-day daily rainfall
-        ├── GET /api/rs/soil-moisture  ── GEE SMAP      ──► Surface + root zone %
-        ├── GET /api/market/prices     ── Agmarknet     ──► Mandi price feed
-        └── GET /api/rs/thumbnail      ── GEE           ──► True color satellite image
-                │
-                ▼
-        Render all 9 dashboard cards
-```
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as React Frontend
+    participant BE as FastAPI Backend
+    participant GEE as Google Earth Engine
+    participant OWM as OpenWeatherMap
+    participant DB as Supabase
 
-### 2. Disease Detection Flow
+    U->>FE: Open Dashboard
+    FE->>DB: Load user fields
+    DB-->>FE: Field list (lat, lon, polygon, crop_type)
 
-```
-User uploads leaf photo (JPEG/PNG/WebP)
-        │
-        ▼
-Frontend validates file (<10 MB)
-        │
-        ▼
-POST /api/ml/detect-disease  (multipart/form-data)
-        │
-        ▼
-backend/services/disease_detection.py
-        │
-        ├── Lazy-load MobileNetV2 from HuggingFace
-        │   (cached in ./ml_models/disease_hf/)
-        │
-        ├── PIL.Image.open → resize to 224×224
-        │
-        ├── MobileNetV2ImageProcessor → tensor
-        │
-        ├── model.forward() → logits (38 classes)
-        │
-        ├── softmax → confidence score
-        │
-        └── id2label lookup → CLASS_INFO lookup
-                │
-                ▼
-        Return JSON:
-        {
-          predicted_class, confidence,
-          crop, disease, severity,
-          treatment, details, is_healthy
-        }
-                │
-                ▼
-        Frontend renders result card
-                │
-        [Not Healthy?]
-                │
-                ▼
-        "View Full Treatment Plan" button
-                │
-                ▼
-        TreatmentModal: What's Wrong / Symptoms /
-        Step-by-Step Treatment / Prevention
+    alt No fields registered
+        FE-->>U: Show "Register your first field"
+    else Has fields
+        FE->>FE: Select first field
+
+        par Parallel API Calls
+            FE->>BE: GET /api/rs/indices
+            BE->>GEE: Sentinel-2 composite
+            GEE-->>BE: NDVI / EVI / NDWI / NDRE / SAVI / BSI / NDMI
+            BE-->>FE: Index values + health zones
+
+            FE->>BE: GET /api/weather/current
+            BE->>OWM: Current conditions
+            OWM-->>BE: Temp, humidity, wind, rain
+            BE-->>FE: Weather data
+
+            FE->>BE: GET /api/weather/forecast
+            BE-->>FE: 7-day daily forecast
+
+            FE->>BE: GET /api/rs/timeseries
+            BE->>GEE: 90-day composites
+            BE-->>FE: Vegetation trend chart data
+
+            FE->>BE: GET /api/rs/rainfall
+            BE->>GEE: CHIRPS 30-day
+            BE-->>FE: Daily rainfall series
+
+            FE->>BE: GET /api/rs/soil-moisture
+            BE->>GEE: NASA SMAP L4
+            BE-->>FE: Surface + root zone moisture
+
+            FE->>BE: GET /api/rs/thumbnail
+            BE->>GEE: True color image
+            BE-->>FE: Satellite thumbnail URL
+
+            FE->>BE: GET /api/alerts + /api/alerts/summary
+            BE->>DB: Query alerts
+            BE-->>FE: Active alerts + severity counts
+
+            FE->>BE: GET /api/advisory
+            BE-->>FE: Advisory cards
+
+            FE->>BE: GET /api/market/prices
+            BE->>Agmark: Scrape mandi data
+            BE-->>FE: Price feed
+        end
+
+        FE-->>U: Render all dashboard cards
+    end
 ```
 
-### 3. Satellite Index Pipeline (GEE)
+---
 
-```
-API Request: lat, lon, start_date, end_date, [polygon]
-        │
-        ▼
-gee_service.py
-        │
-        ├── Build AOI
-        │   ├── polygon provided? → ee.Geometry.Polygon
-        │   └── point only?       → ee.Geometry.Point.buffer(500m)
-        │
-        ├── Filter Sentinel-2 SR collection
-        │   ├── Date range filter
-        │   ├── Cloud cover < 20%
-        │   └── Spatial filter (AOI)
-        │
-        ├── Compute per-image indices:
-        │   ├── NDVI  = (NIR - RED) / (NIR + RED)
-        │   ├── EVI   = 2.5 * (NIR-RED) / (NIR + 6*RED - 7.5*BLUE + 1)
-        │   ├── NDWI  = (GREEN - NIR) / (GREEN + NIR)
-        │   ├── NDRE  = (NIR - RE) / (NIR + RE)   [red-edge band]
-        │   ├── SAVI  = 1.5 * (NIR-RED) / (NIR+RED+0.5)
-        │   ├── BSI   = ((SWIR+RED) - (NIR+BLUE)) / ...
-        │   └── NDMI  = (NIR - SWIR) / (NIR + SWIR)
-        │
-        ├── Median composite → single best-quality image
-        │
-        ├── reduceRegion → mean value per index per AOI
-        │
-        ├── Classify each value into health zone:
-        │   Critical / Poor / Moderate / Good / Excellent
-        │
-        └── Return all indices + zones as JSON
+## Data Flow: Disease Detection
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as React Frontend
+    participant BE as FastAPI Backend
+    participant Model as MobileNetV2
+
+    U->>FE: Upload leaf photo (JPEG / PNG / WebP)
+    FE->>FE: Validate file size (< 10 MB)
+    FE->>BE: POST /api/ml/detect-disease (multipart)
+
+    BE->>BE: PIL open, convert to RGB
+    BE->>BE: Resize to 224x224
+    BE->>Model: MobileNetV2ImageProcessor -> tensor
+    Model-->>BE: Logits (38 classes)
+    BE->>BE: Softmax -> confidence score
+    BE->>BE: id2label -> CLASS_INFO lookup
+
+    BE-->>FE: JSON response
+    Note over BE,FE: predicted_class, confidence,<br>crop, disease, severity,<br>treatment, details, is_healthy
+
+    alt Diseased
+        FE-->>U: Result card + "View Full Treatment Plan"
+        U->>FE: Click treatment button
+        FE-->>U: TreatmentModal with symptoms,<br>step-by-step treatment, prevention
+    else Healthy
+        FE-->>U: Healthy result card
+    end
 ```
 
-### 4. Authentication Flow
+---
 
+## Data Flow: Satellite Index Pipeline
+
+```mermaid
+flowchart TD
+    A["API request arrives:<br>lat, lon, start_date, end_date, polygon"] --> B{Polygon provided?}
+    B -- Yes --> C["ee.Geometry.Polygon(coords)"]
+    B -- No --> D["ee.Geometry.Point(lat, lon).buffer(500m)"]
+    C --> E["Filter Sentinel-2 SR collection"]
+    D --> E
+
+    E --> F["Date range filter"]
+    F --> G["Cloud cover < 20%"]
+    G --> H["Spatial filter (AOI)"]
+    H --> I["Apply scale factors (divide by 10000)"]
+
+    I --> J["Compute 7 indices per image"]
+    J --> J1["NDVI = (NIR - RED) / (NIR + RED)"]
+    J --> J2["EVI = 2.5 * (NIR - RED) / (NIR + 6*RED - 7.5*BLUE + 1)"]
+    J --> J3["NDWI = (GREEN - NIR) / (GREEN + NIR)"]
+    J --> J4["NDRE = (NIR - RE) / (NIR + RE)"]
+    J --> J5["SAVI = 1.5 * (NIR - RED) / (NIR + RED + 0.5)"]
+    J --> J6["BSI = ((SWIR + RED) - (NIR + BLUE)) / ..."]
+    J --> J7["NDMI = (NIR - SWIR) / (NIR + SWIR)"]
+
+    J1 & J2 & J3 & J4 & J5 & J6 & J7 --> K["Median composite (best-of-period)"]
+    K --> L["reduceRegion: mean per index over AOI at 10m"]
+    L --> M["Classify into health zones:<br>Critical / Poor / Moderate / Good / Excellent"]
+    M --> N["Generate false-color PNG thumbnail URL"]
+    N --> O["Return JSON response"]
 ```
-┌─────────┐         ┌──────────────┐        ┌────────────┐
-│  User   │         │  React App   │        │  Supabase  │
-└────┬────┘         └──────┬───────┘        └─────┬──────┘
-     │                     │                      │
-     │  Visit /login        │                      │
-     │─────────────────────►│                      │
-     │                     │                      │
-     │  Enter email+pass    │                      │
-     │─────────────────────►│                      │
-     │                     │ signInWithPassword()  │
-     │                     │──────────────────────►│
-     │                     │                      │
-     │                     │  JWT access_token     │
-     │                     │◄──────────────────────│
-     │                     │                      │
-     │                     │ onAuthStateChange()   │
-     │                     │ fires with session    │
-     │                     │                      │
-     │                     │ fetch profile row     │
-     │                     │──────────────────────►│
-     │                     │◄──────────────────────│
-     │                     │                      │
-     │                     │ Check field count     │
-     │                     │──────────────────────►│
-     │                     │◄──────────────────────│
-     │                     │                      │
-     │  0 fields?          │                      │
-     │◄────────── /onboard  │                      │
-     │                     │                      │
-     │  Has fields?         │                      │
-     │◄────────── /         │                      │
-     │            (Dashboard)                      │
+
+---
+
+## Data Flow: Authentication
+
+```mermaid
+stateDiagram-v2
+    [*] --> AppStart
+    AppStart --> CheckSession: loading = true
+
+    CheckSession --> DemoMode: sessionStorage has demo flag
+    CheckSession --> SupabaseAuth: No demo flag
+
+    DemoMode --> DashboardReady: Set fake user, skip Supabase
+
+    SupabaseAuth --> SessionExists: onAuthStateChange fires
+    SupabaseAuth --> NoSession: No session found
+
+    SessionExists --> FetchProfile: JWT access token received
+    FetchProfile --> CheckFields: Profile loaded
+    CheckFields --> Onboarding: 0 fields
+    CheckFields --> DashboardReady: Has fields
+
+    NoSession --> LoginPage: Show /login
+
+    state LoginPage {
+        [*] --> ChooseMethod
+        ChooseMethod --> EmailPassword: Email + password
+        ChooseMethod --> GoogleOAuth: Google OAuth redirect
+        ChooseMethod --> DemoLogin: Demo mode (no account)
+    }
+
+    LoginPage --> SupabaseAuth: Credentials submitted
+    DemoLogin --> DemoMode
 ```
+
+---
+
+## Feature List
+
+| Feature | Data Source |
+|---|---|
+| NDVI / EVI / NDWI / NDRE / SAVI / BSI / NDMI vegetation maps | Google Earth Engine (Sentinel-2 SR) |
+| True color satellite imagery | Google Earth Engine (Sentinel-2 SR) |
+| 90-day vegetation trend time series | Google Earth Engine compositing |
+| CNN crop disease detection (38 classes, 14 crops) | HuggingFace MobileNetV2 on PlantVillage |
+| LSTM 7-day stress forecast | Custom PyTorch LSTM model |
+| Rule-based pest risk scoring | Weather + NDVI rule engine |
+| Current weather + 7-day forecast | OpenWeatherMap API |
+| NASA SMAP soil moisture (surface + root zone) | Google Earth Engine (SMAP L4) |
+| CHIRPS 30-day rainfall series | Google Earth Engine (CHIRPS Daily) |
+| Agmarknet mandi price feed | Agmarknet scrape |
+| IoT sensor data ingestion (JSON) | REST endpoint |
+| Automated alert system (NDVI drop, water stress, heat, fungal risk) | Rule engine |
+| PDF farm report generation | ReportLab |
+| Crop growth stage tracker | Calendar-based computation |
+| Multi-language UI (English, Hindi, Telugu, Kannada) | i18next |
+| Google OAuth + email authentication | Supabase Auth |
+| Field polygon drawing on map | Leaflet Draw |
+
+---
+
+## ML Models
+
+### CNN Disease Detection (MobileNetV2)
+
+| Property | Value |
+|---|---|
+| Model | linkanjarad/mobilenet_v2_1.0_224-plant-disease-identification |
+| Source | HuggingFace Hub |
+| Training data | PlantVillage (54,305 images, 38 classes) |
+| Input | 224 x 224 RGB image |
+| Output | 38-class probability distribution |
+| Inference time | ~300ms on CPU |
+| Local cache | ./ml_models/disease_hf/ |
+
+Supported crops and diseases:
+
+| Crop | Diseases |
+|---|---|
+| Apple | Scab, Black Rot, Cedar Rust, Healthy |
+| Blueberry | Healthy |
+| Cherry | Powdery Mildew, Healthy |
+| Corn | Cercospora Leaf Spot, Common Rust, Northern Leaf Blight, Healthy |
+| Grape | Black Rot, Esca (Black Measles), Isariopsis Leaf Spot, Healthy |
+| Orange | Citrus Greening (HLB) |
+| Peach | Bacterial Spot, Healthy |
+| Pepper | Bacterial Spot, Healthy |
+| Potato | Early Blight, Late Blight, Healthy |
+| Raspberry | Healthy |
+| Soybean | Healthy |
+| Squash | Powdery Mildew |
+| Strawberry | Leaf Scorch, Healthy |
+| Tomato | Bacterial Spot, Early Blight, Late Blight, Leaf Mold, Septoria, Spider Mites, Target Spot, TYLCV, Mosaic Virus, Healthy |
+
+### LSTM Stress Forecast
+
+| Property | Value |
+|---|---|
+| Architecture | LSTM (sequence-to-one) |
+| Input | 7-day window of NDVI values + weather features |
+| Output | 7-day stress probability forecast |
+| Training scripts | ml_training/ directory |
 
 ---
 
@@ -323,51 +310,76 @@ gee_service.py
 
 ```
 croppy/
-│
-├── backend/                    # Python FastAPI backend
-│   ├── core/                   # Config, auth middleware, Supabase client
-│   ├── routes/                 # HTTP route handlers (one file per domain)
-│   ├── services/               # Business logic, ML inference, GEE calls
-│   └── models/                 # Pydantic schemas
-│
-├── dashboard/                  # React 19 frontend
-│   ├── src/
-│   │   ├── components/         # Shared UI (Sidebar, Gallery, etc.)
-│   │   ├── contexts/           # AuthContext (Supabase auth state)
-│   │   ├── pages/              # One component per route
-│   │   │   ├── Dashboard.jsx   # Main analytics dashboard
-│   │   │   ├── ScanCrop.jsx    # Disease detection + treatment modal
-│   │   │   ├── Landing.jsx     # Public marketing page
-│   │   │   ├── Login.jsx       # Auth page
-│   │   │   ├── FieldHealth.jsx # Per-field index deep dive
-│   │   │   ├── Fields.jsx      # Field CRUD + polygon drawing
-│   │   │   ├── Weather.jsx     # Detailed weather view
-│   │   │   ├── Advisory.jsx    # Full advisory + stage calendar
-│   │   │   ├── Alerts.jsx      # Alert management
-│   │   │   ├── MarketPrices.jsx# Mandi price feed
-│   │   │   ├── PestRisk.jsx    # Pest risk scoring
-│   │   │   ├── Reports.jsx     # PDF report download
-│   │   │   ├── Sensors.jsx     # IoT sensor data view
-│   │   │   └── Analysis.jsx    # Historical analysis
-│   │   ├── utils/
-│   │   │   ├── api.js          # Axios wrappers for all API calls
-│   │   │   └── supabase.js     # Supabase client init
-│   │   ├── i18n.js             # i18next config (EN/HI/TE/KN)
-│   │   └── main.jsx            # React entry point
-│   └── package.json
-│
-├── ml_models/                  # Model weights (gitignored)
-│   └── disease_hf/             # MobileNetV2 cached from HuggingFace
-│
-├── ml_training/                # Training scripts & notebooks
-│
-├── tests/                      # pytest test suite
-│
-├── requirements.txt            # Python dependencies
-├── docker-compose.yml          # Full stack Docker setup
-├── Dockerfile.backend          # Backend container
-├── supabase_schema.sql         # DB schema definition
-└── .env                        # Environment variables (never commit)
+|
+|-- backend/                        Python FastAPI backend
+|   |-- core/
+|   |   |-- config.py               Environment variable loading
+|   |   |-- auth.py                 JWT verification via Supabase
+|   |   |-- supabase_client.py      Supabase service-role client
+|   |
+|   |-- routes/                     HTTP route handlers (one file per domain)
+|   |   |-- rs.py                   Remote sensing endpoints
+|   |   |-- ml.py                   Disease detection + LSTM
+|   |   |-- fields.py               Field CRUD
+|   |   |-- weather.py              Weather + forecast
+|   |   |-- alerts.py               Alert list + acknowledge
+|   |   |-- advisory.py             Advisory card generation
+|   |   |-- market.py               Mandi price feed
+|   |   |-- sensors.py              IoT sensor ingestion
+|   |   |-- reports.py              PDF report generation
+|   |   |-- onboarding.py           First-field setup flow
+|   |   |-- insurance.py            Insurance helpers
+|   |   |-- auth.py                 Email confirm (dev helper)
+|   |
+|   |-- services/                   Business logic layer
+|   |   |-- gee_service.py          All Google Earth Engine calls
+|   |   |-- disease_detection.py    CNN inference pipeline
+|   |   |-- lstm_service.py         LSTM forecast service
+|   |   |-- advisory_service.py     Rule engine for advisories
+|   |   |-- auto_alerts.py          Alert trigger rules
+|   |   |-- pest_risk.py            Pest risk scoring
+|   |   |-- weather_service.py      OWM + NASA POWER calls
+|   |   |-- soilgrids_service.py    SoilGrids API calls
+|   |
+|   |-- models/
+|       |-- schemas.py              Pydantic request/response models
+|
+|-- dashboard/                      React 19 frontend
+|   |-- src/
+|   |   |-- components/             Shared UI (Sidebar, Gallery, etc.)
+|   |   |-- contexts/               AuthContext (Supabase auth state)
+|   |   |-- pages/
+|   |   |   |-- Dashboard.jsx       Main analytics dashboard
+|   |   |   |-- ScanCrop.jsx        Disease detection + treatment modal
+|   |   |   |-- Landing.jsx         Public marketing page
+|   |   |   |-- Login.jsx           Auth page
+|   |   |   |-- FieldHealth.jsx     Per-field index deep dive
+|   |   |   |-- Fields.jsx          Field CRUD + polygon drawing
+|   |   |   |-- Weather.jsx         Detailed weather view
+|   |   |   |-- Advisory.jsx        Full advisory + stage calendar
+|   |   |   |-- Alerts.jsx          Alert management
+|   |   |   |-- MarketPrices.jsx    Mandi price feed
+|   |   |   |-- PestRisk.jsx        Pest risk scoring
+|   |   |   |-- Reports.jsx         PDF report download
+|   |   |   |-- Sensors.jsx         IoT sensor data view
+|   |   |   |-- Analysis.jsx        Historical analysis
+|   |   |-- utils/
+|   |   |   |-- api.js              Axios wrappers for all API calls
+|   |   |   |-- supabase.js         Supabase client init
+|   |   |-- i18n.js                 i18next config (EN / HI / TE / KN)
+|   |   |-- main.jsx                React entry point
+|   |-- package.json
+|
+|-- ml_models/                      Model weights (gitignored)
+|   |-- disease_hf/                 MobileNetV2 cached from HuggingFace
+|
+|-- ml_training/                    Training scripts and notebooks
+|-- tests/                          pytest test suite
+|-- requirements.txt                Python dependencies
+|-- docker-compose.yml              Full stack Docker setup
+|-- Dockerfile.backend              Backend container
+|-- supabase_schema.sql             Database schema definition
+|-- .env                            Environment variables (never commit)
 ```
 
 ---
@@ -377,7 +389,7 @@ croppy/
 ### Backend
 
 | Layer | Technology | Version |
-|-------|-----------|---------|
+|---|---|---|
 | Web framework | FastAPI | 0.111.0 |
 | ASGI server | Uvicorn | 0.29.0 |
 | Satellite data | Google Earth Engine API | 0.1.409 |
@@ -386,7 +398,7 @@ croppy/
 | Image processing | Pillow | latest |
 | ML utilities | scikit-learn | latest |
 | HTTP client | httpx | 0.27.0 |
-| Database / Auth | Supabase (PostgreSQL) | 2.5.0 |
+| Database and Auth | Supabase (PostgreSQL) | 2.5.0 |
 | PDF generation | ReportLab | 4.4.10 |
 | Validation | Pydantic | 2.7.1 |
 | Config | python-dotenv | 1.0.1 |
@@ -394,7 +406,7 @@ croppy/
 ### Frontend
 
 | Layer | Technology | Version |
-|-------|-----------|---------|
+|---|---|---|
 | Framework | React | 19.2.0 |
 | Build tool | Vite | 7.3.1 |
 | Routing | React Router | 7.13.1 |
@@ -411,362 +423,16 @@ croppy/
 ### Infrastructure
 
 | Service | Role |
-|---------|------|
-| Supabase | PostgreSQL database + Auth + Row Level Security |
+|---|---|
+| Supabase | PostgreSQL database, Auth, Row Level Security |
 | Google Earth Engine | Satellite imagery computation |
 | OpenWeatherMap | Current weather + 7-day forecast |
 | NASA POWER / SMAP | Soil moisture satellite data |
 | CHIRPS | Rainfall satellite data |
 | Agmarknet | Indian commodity market prices |
 | HuggingFace Hub | MobileNetV2 model weights |
-| Redis | Cache + future Celery task queue |
+| Redis | Cache layer (future Celery task queue) |
 | Docker | Containerised deployment |
-
----
-
-## Prerequisites
-
-Before you begin, make sure you have the following installed and configured:
-
-| Requirement | Minimum Version | Notes |
-|------------|-----------------|-------|
-| Python | 3.11+ | Used for backend |
-| Node.js | 18+ | Used for frontend build |
-| npm | 9+ | Package manager |
-| Git | any | Version control |
-| Google Earth Engine account | — | Free at earthengine.google.com |
-| Supabase project | — | Free tier at supabase.com |
-| OpenWeatherMap API key | — | Free tier at openweathermap.org |
-
----
-
-## Installation & Setup
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/your-org/croppy.git
-cd croppy
-```
-
-### 2. Backend setup
-
-```bash
-# Create and activate virtual environment
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# macOS / Linux
-source venv/bin/activate
-
-# Install all Python dependencies
-pip install -r requirements.txt
-
-# Install PyTorch CPU build (Windows/Linux)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-```
-
-### 3. Frontend setup
-
-```bash
-cd dashboard
-npm install
-cd ..
-```
-
-### 4. Authenticate with Google Earth Engine
-
-```bash
-# Run once to authenticate your GEE account
-python -c "import ee; ee.Authenticate()"
-
-# Follow the browser prompt, paste the token back into the terminal
-# Your credentials are saved to ~/.config/earthengine/
-```
-
-### 5. Database setup
-
-Run the schema SQL in your Supabase SQL editor:
-
-```bash
-# Copy the contents of supabase_schema.sql into:
-# Supabase Dashboard → SQL Editor → New Query → Paste → Run
-```
-
-The schema creates these tables:
-- `profiles` — user profile (name, role, language, state, district)
-- `fields` — registered farm fields with polygon, crop type, sowing date
-- `sensor_readings` — IoT sensor data ingestion
-- `alerts` — auto-generated and manually created alerts
-- `reports` — generated PDF report metadata
-
----
-
-## Environment Variables
-
-Create a `.env` file in the project root (copy from `.env.example` if it exists):
-
-```env
-# ── Google Earth Engine ───────────────────────────────────────────
-GEE_PROJECT_ID=your-gee-project-id
-
-# ── OpenWeatherMap ────────────────────────────────────────────────
-OPENWEATHER_API_KEY=your-openweathermap-api-key
-
-# ── Supabase (server-side, never expose to frontend) ─────────────
-SUPABASE_URL=https://your-project-id.supabase.co
-SUPABASE_SERVICE_KEY=your-service-role-key
-SUPABASE_JWT_SECRET=your-jwt-secret
-
-# ── ML Model paths ────────────────────────────────────────────────
-MODEL_PATH=./ml_models/disease_model.h5
-TFLITE_MODEL_PATH=./ml_models/disease_model.tflite
-```
-
-Create a `dashboard/.env` file for the frontend:
-
-```env
-# ── Supabase (public keys, safe for browser) ─────────────────────
-VITE_SUPABASE_URL=https://your-project-id.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-public-key
-
-# ── Backend API URL ───────────────────────────────────────────────
-VITE_API_URL=http://localhost:8000
-```
-
-> **Never commit `.env` files.** The `.gitignore` already excludes them.
-
----
-
-## Running the App
-
-### Development mode (two terminals)
-
-**Terminal 1 — Backend:**
-
-```bash
-# From project root, with venv activated
-uvicorn backend.main:app --reload --port 8000
-```
-
-The API will be live at `http://localhost:8000`
-Swagger docs: `http://localhost:8000/docs`
-ReDoc: `http://localhost:8000/redoc`
-
-**Terminal 2 — Frontend:**
-
-```bash
-cd dashboard
-npm run dev
-```
-
-The dashboard will be live at `http://localhost:5173`
-
-### Production build
-
-```bash
-# Build the frontend
-cd dashboard
-npm run build
-# Output is in dashboard/dist/
-
-# Run backend in production mode
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4
-```
-
----
-
-## Docker Deployment
-
-The `docker-compose.yml` starts the full stack (backend + frontend + Redis) in containers.
-
-```bash
-# Build and start all services
-docker-compose up --build
-
-# Run in background
-docker-compose up -d --build
-
-# Stop all services
-docker-compose down
-
-# View logs
-docker-compose logs -f backend
-docker-compose logs -f dashboard
-```
-
-### Docker service ports
-
-| Service | Container port | Host port |
-|---------|---------------|-----------|
-| FastAPI backend | 8000 | 8000 |
-| React dashboard (nginx) | 80 | 3000 |
-| Redis | 6379 | 6379 |
-
-### Docker health check
-
-The backend container has a built-in health check:
-```
-GET http://localhost:8000/health → { "status": "ok" }
-```
-The container restarts automatically if it becomes unhealthy.
-
----
-
-## API Reference
-
-All endpoints are documented at `http://localhost:8000/docs` (Swagger UI).
-
-### Remote Sensing — `/api/rs/`
-
-```
-GET  /api/rs/indices           Compute all vegetation indices for a field
-GET  /api/rs/timeseries        90-day NDVI/EVI/NDWI/NDRE time series
-GET  /api/rs/thumbnail         True color Sentinel-2 image URL
-GET  /api/rs/index-thumbnail   False-color spectral index image URL
-GET  /api/rs/rainfall          30-day CHIRPS daily rainfall
-GET  /api/rs/soil-moisture     NASA SMAP surface + root zone moisture
-```
-
-### Machine Learning — `/api/ml/`
-
-```
-POST /api/ml/detect-disease    CNN inference on uploaded leaf image
-POST /api/ml/forecast          LSTM 7-day stress forecast
-GET  /api/ml/yield-estimate    Yield estimation from indices
-```
-
-### Fields — `/api/fields/`
-
-```
-GET    /api/fields/             List user's fields
-POST   /api/fields/             Create a new field
-GET    /api/fields/{id}         Get single field
-PUT    /api/fields/{id}         Update field
-DELETE /api/fields/{id}         Delete field
-```
-
-### Weather — `/api/weather/`
-
-```
-GET /api/weather/current        Current conditions (OWM)
-GET /api/weather/forecast       7-day daily forecast (OWM)
-GET /api/weather/nasa-power     Historical climate (NASA POWER)
-```
-
-### Alerts — `/api/alerts/`
-
-```
-GET  /api/alerts/               List active alerts
-POST /api/alerts/               Create manual alert
-GET  /api/alerts/summary        Count by severity
-POST /api/alerts/{id}/ack       Acknowledge an alert
-```
-
-### Market — `/api/market/`
-
-```
-GET /api/market/prices          Mandi prices for a crop type
-```
-
-### Advisory — `/api/advisory/`
-
-```
-GET /api/advisory/              Generate advisory cards for a field
-GET /api/advisory/growth-stage  Crop growth stage for given sowing date
-```
-
-### Reports — `/api/reports/`
-
-```
-POST /api/reports/generate      Generate PDF farm report
-GET  /api/reports/              List generated reports
-GET  /api/reports/{id}/download Download PDF
-```
-
-### Sensors — `/api/sensors/`
-
-```
-POST /api/sensors/ingest        Ingest IoT sensor reading
-GET  /api/sensors/              List sensor readings
-```
-
----
-
-## ML Models
-
-### 1. CNN Disease Detection — MobileNetV2
-
-```
-Model:     linkanjarad/mobilenet_v2_1.0_224-plant-disease-identification
-Source:    HuggingFace Hub
-Dataset:   PlantVillage (54,305 images, 38 classes)
-Input:     224×224 RGB image
-Output:    38-class probability distribution
-Inference: CPU, ~300ms per image
-Cache:     ./ml_models/disease_hf/
-```
-
-**Supported classes (38):**
-
-| Crop | Diseases |
-|------|----------|
-| Apple | Scab, Black Rot, Cedar Rust, Healthy |
-| Blueberry | Healthy |
-| Cherry | Powdery Mildew, Healthy |
-| Corn | Cercospora Leaf Spot, Common Rust, Northern Leaf Blight, Healthy |
-| Grape | Black Rot, Esca (Black Measles), Isariopsis Leaf Spot, Healthy |
-| Orange | Citrus Greening (HLB) |
-| Peach | Bacterial Spot, Healthy |
-| Pepper | Bacterial Spot, Healthy |
-| Potato | Early Blight, Late Blight, Healthy |
-| Raspberry | Healthy |
-| Soybean | Healthy |
-| Squash | Powdery Mildew |
-| Strawberry | Leaf Scorch, Healthy |
-| Tomato | Bacterial Spot, Early Blight, Late Blight, Leaf Mold, Septoria, Spider Mites, Target Spot, TYLCV, Mosaic Virus, Healthy |
-
-### 2. LSTM Stress Forecast
-
-```
-Architecture: LSTM (sequence-to-one)
-Input:        7-day NDVI + weather window
-Output:       7-day stress probability forecast
-Training:     ml_training/ scripts
-```
-
-### Inference Pipeline
-
-```
-User uploads image
-      │
-      ▼
-PIL.Image.open() → convert("RGB")
-      │
-      ▼
-MobileNetV2ImageProcessor
-(resize 224×224, normalize)
-      │
-      ▼
-MobileNetV2ForImageClassification.forward()
-      │
-      ▼
-torch.softmax() → confidence vector
-      │
-      ▼
-argmax → top class index
-      │
-      ▼
-model.config.id2label[index] → class name
-      │
-      ▼
-CLASS_INFO lookup → crop, disease, severity, treatment, details
-      │
-      ▼
-Return JSON response
-```
 
 ---
 
@@ -777,8 +443,8 @@ Return JSON response
 CREATE TABLE profiles (
   id          UUID PRIMARY KEY REFERENCES auth.users(id),
   name        TEXT,
-  role        TEXT DEFAULT 'farmer',   -- farmer | agronomist | admin
-  language    TEXT DEFAULT 'en',       -- en | hi | te | kn
+  role        TEXT DEFAULT 'farmer',     -- farmer | agronomist | admin
+  language    TEXT DEFAULT 'en',         -- en | hi | te | kn
   phone       TEXT,
   state       TEXT,
   district    TEXT,
@@ -796,7 +462,7 @@ CREATE TABLE fields (
   area_ha     FLOAT,
   state       TEXT,
   district    TEXT,
-  polygon     JSONB,           -- [[lat, lon], ...] boundary points
+  polygon     JSONB,                     -- [[lat, lon], ...] boundary points
   sowing_date DATE,
   created_at  TIMESTAMPTZ DEFAULT now()
 );
@@ -817,181 +483,311 @@ CREATE TABLE alerts (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id       UUID REFERENCES profiles(id) ON DELETE CASCADE,
   field_id      UUID REFERENCES fields(id),
-  alert_type    TEXT,          -- ndvi_drop | water_stress | heat_stress | fungal_risk
-  severity      TEXT,          -- high | medium | low
+  alert_type    TEXT,                    -- ndvi_drop | water_stress | heat_stress | fungal_risk
+  severity      TEXT,                    -- high | medium | low
   message       TEXT,
   acknowledged  BOOLEAN DEFAULT false,
   created_at    TIMESTAMPTZ DEFAULT now()
 );
 ```
 
-Row Level Security (RLS) is enabled — users can only read/write their own rows.
+Row Level Security is enabled on all tables. Users can only read and write their own rows.
 
 ---
 
 ## Frontend Architecture
 
-### Component Tree
+```mermaid
+graph TD
+    App --> BrowserRouter
+    BrowserRouter --> AuthProvider
 
-```
-App
-├── BrowserRouter
-│   └── AuthProvider
-│       ├── AppRoutes
-│       │   ├── /landing        → Landing.jsx
-│       │   ├── /login          → LoginRoute → Login.jsx
-│       │   ├── /register       → RegisterRoute → Register.jsx
-│       │   ├── /onboard        → Onboarding.jsx
-│       │   └── /*              → AppShell (authenticated only)
-│       │       ├── Sidebar
-│       │       │   ├── NavItem (×12 routes)
-│       │       │   ├── LanguageSwitcher
-│       │       │   └── UserCard
-│       │       └── <main>
-│       │           ├── /            → Dashboard.jsx
-│       │           ├── /fields      → Fields.jsx
-│       │           ├── /health      → FieldHealth.jsx
-│       │           ├── /scan        → ScanCrop.jsx
-│       │           ├── /pest-risk   → PestRisk.jsx
-│       │           ├── /weather     → Weather.jsx
-│       │           ├── /alerts      → Alerts.jsx
-│       │           ├── /market      → MarketPrices.jsx
-│       │           ├── /advisory    → Advisory.jsx
-│       │           ├── /reports     → Reports.jsx
-│       │           ├── /sensors     → Sensors.jsx
-│       │           └── /analysis    → Analysis.jsx
-│       └── Toaster
+    AuthProvider --> PublicRoutes
+    AuthProvider --> AppShell
+
+    PublicRoutes --> Landing["/landing — Landing"]
+    PublicRoutes --> Login["/login — Login"]
+    PublicRoutes --> Register["/register — Register"]
+    PublicRoutes --> Onboard["/onboard — Onboarding"]
+
+    AppShell --> Sidebar
+    AppShell --> MainContent
+
+    Sidebar --> NavItems["12 navigation items"]
+    Sidebar --> LangSwitcher["Language Switcher"]
+    Sidebar --> UserCard["User Card"]
+
+    MainContent --> Dashboard["/ — Dashboard"]
+    MainContent --> FieldsPage["/fields — Fields"]
+    MainContent --> FieldHealth["/health — Field Health"]
+    MainContent --> ScanCrop["/scan — Scan Crop"]
+    MainContent --> PestRisk["/pest-risk — Pest Risk"]
+    MainContent --> Weather["/weather — Weather"]
+    MainContent --> Alerts["/alerts — Alerts"]
+    MainContent --> Market["/market — Market Prices"]
+    MainContent --> Advisory["/advisory — Advisory"]
+    MainContent --> Reports["/reports — Reports"]
+    MainContent --> Sensors["/sensors — Sensors"]
+    MainContent --> Analysis["/analysis — Analysis"]
 ```
 
 ### State Management
 
-```
-┌─────────────────────────────────────────────────┐
-│  Global State (React Context)                   │
-│                                                 │
-│  AuthContext                                    │
-│  ├── user          (Supabase user object)       │
-│  ├── profile       (profiles table row)         │
-│  ├── isAuthenticated                            │
-│  ├── isDemo        (demo mode flag)             │
-│  ├── loading                                    │
-│  ├── signIn / signUp / signOut                  │
-│  └── getToken      (JWT for API calls)          │
-└─────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────┐
-│  Page-local State (useState)                    │
-│  Each page manages its own data fetching        │
-│  and loading states independently               │
-└─────────────────────────────────────────────────┘
-```
-
-### i18n (Internationalisation)
-
-The app supports 4 languages selectable from the sidebar:
-
-| Code | Language | Script |
-|------|----------|--------|
-| `en` | English  | Latin  |
-| `hi` | हिंदी (Hindi) | Devanagari |
-| `te` | తెలుగు (Telugu) | Telugu |
-| `kn` | ಕನ್ನಡ (Kannada) | Kannada |
-
-All translations live in `dashboard/src/i18n.js`. Change language using the dropdown in the sidebar — it updates instantly across all translated components without a page reload.
+Global state is managed through React Context. The `AuthContext` holds the Supabase user object, profile row, authentication status, demo mode flag, loading state, and methods for sign-in, sign-up, sign-out, and token retrieval. Each page manages its own data fetching and loading states independently using local `useState` hooks.
 
 ---
 
-## Authentication Flow
+## Prerequisites
 
+| Requirement | Minimum Version | Notes |
+|---|---|---|
+| Python | 3.11+ | Backend runtime |
+| Node.js | 18+ | Frontend build |
+| npm | 9+ | Package manager |
+| Git | any | Version control |
+| Google Earth Engine account | - | Free at earthengine.google.com |
+| Supabase project | - | Free tier at supabase.com |
+| OpenWeatherMap API key | - | Free tier at openweathermap.org |
+
+---
+
+## Installation
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/your-org/croppy.git
+cd croppy
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Auth State Machine                        │
-│                                                             │
-│   App starts                                                │
-│       │                                                     │
-│       ▼                                                     │
-│   loading = true                                            │
-│       │                                                     │
-│       ├── sessionStorage has 'croppy_demo'?                 │
-│       │         │ YES                                       │
-│       │         ▼                                           │
-│       │   Demo mode — set fake user, skip Supabase         │
-│       │                                                     │
-│       │ NO                                                  │
-│       ▼                                                     │
-│   supabase.auth.onAuthStateChange()                         │
-│       │                                                     │
-│       ├── session exists? ─── YES ──► fetchProfile()        │
-│       │                              loading = false        │
-│       │                              redirect to /          │
-│       │                                                     │
-│       └── no session? ──────────────► loading = false       │
-│                                       show /login           │
-│                                                             │
-│   Supported login methods:                                  │
-│   • Email + password                                        │
-│   • Google OAuth (redirect flow)                            │
-│   • Demo mode (no account needed)                           │
-└─────────────────────────────────────────────────────────────┘
+
+### 2. Backend setup
+
+```bash
+python -m venv venv
+
+# Windows
+venv\Scripts\activate
+
+# macOS / Linux
+source venv/bin/activate
+
+pip install -r requirements.txt
+
+# Install PyTorch CPU build
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+```
+
+### 3. Frontend setup
+
+```bash
+cd dashboard
+npm install
+cd ..
+```
+
+### 4. Authenticate with Google Earth Engine
+
+```bash
+python -c "import ee; ee.Authenticate()"
+# Follow the browser prompt, paste the token back into the terminal.
+# Credentials are saved to ~/.config/earthengine/
+```
+
+### 5. Database setup
+
+Open the Supabase SQL Editor, paste the contents of `supabase_schema.sql`, and run. This creates the `profiles`, `fields`, `sensor_readings`, and `alerts` tables with Row Level Security enabled.
+
+---
+
+## Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+# Google Earth Engine
+GEE_PROJECT_ID=your-gee-project-id
+
+# OpenWeatherMap
+OPENWEATHER_API_KEY=your-openweathermap-api-key
+
+# Supabase (server-side, never expose to frontend)
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_SERVICE_KEY=your-service-role-key
+SUPABASE_JWT_SECRET=your-jwt-secret
+
+# ML Model paths
+MODEL_PATH=./ml_models/disease_model.h5
+TFLITE_MODEL_PATH=./ml_models/disease_model.tflite
+```
+
+Create a `dashboard/.env` file for the frontend:
+
+```env
+# Supabase (public keys, safe for browser)
+VITE_SUPABASE_URL=https://your-project-id.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-public-key
+
+# Backend API URL
+VITE_API_URL=http://localhost:8000
+```
+
+Never commit `.env` files. The `.gitignore` already excludes them.
+
+---
+
+## Running the App
+
+### Development (two terminals)
+
+Terminal 1 (backend):
+
+```bash
+uvicorn backend.main:app --reload --port 8000
+```
+
+The API will be live at `http://localhost:8000`. Swagger docs are at `/docs` and ReDoc at `/redoc`.
+
+Terminal 2 (frontend):
+
+```bash
+cd dashboard
+npm run dev
+```
+
+The dashboard will be live at `http://localhost:5173`.
+
+### Production build
+
+```bash
+cd dashboard
+npm run build
+# Output goes to dashboard/dist/
+
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
 ---
 
-## Satellite Data Pipeline
+## Docker Deployment
 
-### Sentinel-2 Index Computation (GEE)
+```bash
+# Build and start all services
+docker-compose up --build
 
-```
-Input: lat, lon, date_range, [polygon]
-          │
-          ▼
-┌─────────────────────────────────────────────┐
-│         Google Earth Engine                  │
-│                                             │
-│  1. Filter Sentinel-2 SR collection         │
-│     ├── Date: start_date → end_date         │
-│     ├── Bounds: AOI polygon/point           │
-│     └── Cloud cover filter < 20%           │
-│                                             │
-│  2. Apply scale factors (÷10000)            │
-│                                             │
-│  3. Compute 7 spectral indices per image    │
-│     NDVI, EVI, NDWI, NDRE, SAVI, BSI, NDMI  │
-│                                             │
-│  4. Median composite (best-of-period)       │
-│                                             │
-│  5. reduceRegion(mean, AOI, 10m scale)      │
-│                                             │
-│  6. Classify into health zones              │
-│                                             │
-│  7. Generate false-color PNG thumbnail URL  │
-│     (for map overlay at 10m resolution)     │
-└─────────────────────────────────────────────┘
-          │
-          ▼
-    JSON Response
+# Run in background
+docker-compose up -d --build
+
+# Stop
+docker-compose down
+
+# View logs
+docker-compose logs -f backend
+docker-compose logs -f dashboard
 ```
 
-### SMAP Soil Moisture
+| Service | Container Port | Host Port |
+|---|---|---|
+| FastAPI backend | 8000 | 8000 |
+| React dashboard (nginx) | 80 | 3000 |
+| Redis | 6379 | 6379 |
 
-```
-NASA SMAP L4 Global Daily 9km
-    │
-    GEE: NASA/SMAP/SPL4SMGP/007
-    │
-    ├── surface_sm    (0–5 cm)  → volumetric water content
-    └── subsurface_sm (5–50cm) → root zone moisture
-```
+The backend container includes a health check at `GET /health` that returns `{ "status": "ok" }`. The container restarts automatically if it becomes unhealthy.
 
-### CHIRPS Rainfall
+---
 
-```
-Climate Hazards Group InfraRed Precipitation with Station data
-    │
-    GEE: UCSB-CHG/CHIRPS/DAILY
-    │
-    └── precipitation (mm/day) → 30-day daily time series
-```
+## API Reference
+
+Full interactive documentation is available at `http://localhost:8000/docs` (Swagger UI).
+
+### Remote Sensing (`/api/rs/`)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | /api/rs/indices | Compute all vegetation indices for a field |
+| GET | /api/rs/timeseries | 90-day NDVI/EVI/NDWI/NDRE time series |
+| GET | /api/rs/thumbnail | True color Sentinel-2 image URL |
+| GET | /api/rs/index-thumbnail | False-color spectral index image URL |
+| GET | /api/rs/rainfall | 30-day CHIRPS daily rainfall |
+| GET | /api/rs/soil-moisture | NASA SMAP surface + root zone moisture |
+
+### Machine Learning (`/api/ml/`)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | /api/ml/detect-disease | CNN inference on uploaded leaf image |
+| POST | /api/ml/forecast | LSTM 7-day stress forecast |
+| GET | /api/ml/yield-estimate | Yield estimation from indices |
+
+### Fields (`/api/fields/`)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | /api/fields/ | List user's fields |
+| POST | /api/fields/ | Create a new field |
+| GET | /api/fields/{id} | Get single field |
+| PUT | /api/fields/{id} | Update field |
+| DELETE | /api/fields/{id} | Delete field |
+
+### Weather (`/api/weather/`)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | /api/weather/current | Current conditions (OWM) |
+| GET | /api/weather/forecast | 7-day daily forecast (OWM) |
+| GET | /api/weather/nasa-power | Historical climate (NASA POWER) |
+
+### Alerts (`/api/alerts/`)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | /api/alerts/ | List active alerts |
+| POST | /api/alerts/ | Create manual alert |
+| GET | /api/alerts/summary | Count by severity |
+| POST | /api/alerts/{id}/ack | Acknowledge an alert |
+
+### Market (`/api/market/`)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | /api/market/prices | Mandi prices for a crop type |
+
+### Advisory (`/api/advisory/`)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | /api/advisory/ | Generate advisory cards for a field |
+| GET | /api/advisory/growth-stage | Crop growth stage for given sowing date |
+
+### Reports (`/api/reports/`)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | /api/reports/generate | Generate PDF farm report |
+| GET | /api/reports/ | List generated reports |
+| GET | /api/reports/{id}/download | Download PDF |
+
+### Sensors (`/api/sensors/`)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | /api/sensors/ingest | Ingest IoT sensor reading |
+| GET | /api/sensors/ | List sensor readings |
+
+---
+
+## Satellite Data Sources
+
+### Sentinel-2 (Vegetation Indices)
+
+The platform uses the Sentinel-2 Surface Reflectance collection from Google Earth Engine. Images are filtered by date range, cloud cover (below 20%), and spatial bounds. After applying scale factors, seven spectral indices are computed per image, then a median composite produces the best-of-period values. The `reduceRegion` operation extracts mean values at 10-meter resolution over the field boundary.
+
+### NASA SMAP (Soil Moisture)
+
+NASA SMAP L4 Global Daily data at 9km resolution provides surface moisture (0 to 5 cm) and subsurface root zone moisture (5 to 50 cm) as volumetric water content. Accessed via Google Earth Engine collection `NASA/SMAP/SPL4SMGP/007`.
+
+### CHIRPS (Rainfall)
+
+Climate Hazards Group InfraRed Precipitation with Station data provides daily precipitation in mm/day. The platform retrieves a 30-day daily time series from Google Earth Engine collection `UCSB-CHG/CHIRPS/DAILY`.
 
 ---
 
@@ -1015,14 +811,17 @@ npm run lint
 ## Troubleshooting
 
 | Problem | Solution |
-|---------|----------|
+|---|---|
 | `ee.EEException: Please authorize access` | Run `python -c "import ee; ee.Authenticate()"` |
 | `OPENWEATHER_API_KEY not set` | Add key to `.env` and restart backend |
-| Disease model downloads on first run | This is expected — ~14 MB cached to `./ml_models/disease_hf/` |
+| Disease model downloads on first run | Expected behavior. ~14 MB cached to `./ml_models/disease_hf/` |
 | Supabase 401 on API calls | Check `SUPABASE_SERVICE_KEY` in `.env` |
-| `CORS error` in browser | Ensure backend is running on port 8000 |
-| Map tiles not loading | Check internet connection; Esri satellite tiles require no API key |
+| CORS error in browser | Ensure backend is running on port 8000 |
+| Map tiles not loading | Check internet connection. Esri satellite tiles require no API key |
 | `vite: command not found` | Run `npm install` inside `dashboard/` first |
 
 ---
 
+## License
+
+This project is proprietary. See LICENSE for details.
